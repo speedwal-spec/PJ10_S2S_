@@ -36,7 +36,8 @@ pip install matplotlib $MIRROR
 Write-Host ""
 Write-Host "[6/6] 安装 tqdm..." -ForegroundColor Cyan
 pip install tqdm $MIRROR
-
+pip install tensorboard
+pip install --upgrade datasets huggingface_hub
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "所有依赖安装完成！" -ForegroundColor Green

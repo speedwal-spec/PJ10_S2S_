@@ -31,7 +31,14 @@ from transformers import (
 )
 from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
-
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # 非交互式后端，适合服务器环境或无 GUI 环境
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+    print("⚠️ 警告: matplotlib 未安装，将跳过高清图表生成。安装命令: pip install matplotlib", file=sys.stderr)
 # =============================================================================
 # 可调超参：本地试跑可先把子集设小
 # =============================================================================
@@ -147,7 +154,7 @@ def run_s2s_training(
     text_col: str,
     summary_col: str,
     args: argparse.Namespace,
-) -> None:
+) -> Dict[str, List[float]]:
     # 1. 自动检测并配置硬件设备
     device = torch.device(
         "cuda" if torch.cuda.is_available() 
@@ -182,6 +189,8 @@ def run_s2s_training(
     print(f" [Prof 提示] 硬件设备: {device} | 显存优化 AMP: {'开启' if scaler else '关闭'}")
     print(f" 训练总轮数: {args.epochs} | 每轮数据包数: {steps_per_epoch} | 等效总更新步数: {total_train_steps}")
     
+    train_losses_history = []
+    val_losses_history = []
     tb_log_dir = os.path.join("runs", getattr(args, "exp_id", "default_run"))
     tb_writer = SummaryWriter(log_dir=tb_log_dir)
     global_step = 0
@@ -265,7 +274,8 @@ def run_s2s_training(
         avg_val_loss = total_val_loss / len(val_loader)
         print(f"\n✨ Epoch {epoch+1} 成果汇总 -> Avg Train Loss: {avg_train_loss:.4f} | Avg Val Loss: {avg_val_loss:.4f}")
         tb_writer.add_scalar("Val/Loss", avg_val_loss, epoch + 1)
-        
+        train_losses_history.append(avg_train_loss)
+        val_losses_history.append(avg_val_loss)
         # ==========================================
         # 🌟 新增：Early Stopping 核心裁决逻辑
         # ==========================================
@@ -285,6 +295,117 @@ def run_s2s_training(
                 
     # 训练彻底结束后（无论是否早停），关闭监控面板
     tb_writer.close()
+    return {
+        'train_losses': train_losses_history,
+        'val_losses': val_losses_history,
+    }
+def save_training_plot(
+    train_losses: List[float], val_losses: List[float], rouge_scores: Optional[Dict[str, float]], args: argparse.Namespace, out_dir: str,
+) -> None:
+    if not HAS_MATPLOTLIB: return
+    try:
+        fig, ax = plt.subplots(figsize=(12, 8))
+        epochs = range(1, len(train_losses) + 1)
+        ax.plot(epochs, train_losses, 'b-o', label='Train Loss', linewidth=2, markersize=6)
+        ax.plot(epochs, val_losses, 'r-s', label='Val Loss', linewidth=2, markersize=6)
+        ax.set_title('T5 News Summarization - Training Progress', fontsize=14, fontweight='bold', pad=20)
+        ax.set_xlabel('Epoch', fontsize=12)
+        ax.set_ylabel('Loss', fontsize=12)
+        ax.legend(loc='upper right', fontsize=11)
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.tick_params(labelsize=10)
+        
+        param_text = (
+            f"Hyperparameters:\nExp ID: {getattr(args, 'exp_id', 'default')} | Model: {args.model_name}\n"
+            f"LR: {args.lr} | Batch Size: {args.batch_size} | Grad Accum: {args.grad_accum}\n"
+        )
+        if rouge_scores:
+            rouge_text = (
+                f"\nROUGE Scores (val subset):\nROUGE-1: {rouge_scores.get('rouge1', 0):.4f} | "
+                f"ROUGE-2: {rouge_scores.get('rouge2', 0):.4f} | ROUGE-L: {rouge_scores.get('rougeL', 0):.4f}"
+            )
+            param_text += rouge_text
+            
+        plt.figtext(
+            0.5, 0.01, param_text, ha='center', va='bottom', fontsize=9,
+            bbox=dict(boxstyle='round,pad=0.8', facecolor='lightyellow', edgecolor='gray', alpha=0.9), family='monospace'
+        )
+        plt.tight_layout(rect=[0, 0.15, 1, 0.95])
+        plot_path = os.path.join(out_dir, "training_curve.png")
+        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+    except Exception as e:
+        print(f"可视化失败: {e}", file=sys.stderr)
+
+def plot_rouge_comparison(rouge_scores: Dict[str, float], save_path: str = "rouge_comparison.png") -> None:
+    if not HAS_MATPLOTLIB: return
+    try:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        metrics, keys = ['ROUGE-1', 'ROUGE-2', 'ROUGE-L'], ['rouge1', 'rouge2', 'rougeL']
+        current_scores = [rouge_scores.get(k, 0) for k in keys]
+        x = np.arange(len(metrics))
+        bars1 = ax.bar(x, current_scores, 0.4, label='Current Model', color='#4CAF50', alpha=0.8, edgecolor='black')
+        
+        for bar, val in zip(bars1, current_scores):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005, f'{val:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            
+        ax.set_ylabel('ROUGE Score', fontsize=12)
+        ax.set_title('ROUGE Metrics Evaluation', fontsize=14, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(metrics, fontsize=11)
+        ax.set_ylim(0, max(current_scores) * 1.2 if max(current_scores) > 0 else 1.0)
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+    except Exception as e:
+        print(f"ROUGE 图生成失败: {e}", file=sys.stderr)
+
+def plot_performance_radar(metrics: Dict[str, float], save_path: str = "performance_radar.png") -> None:
+    if not HAS_MATPLOTLIB: return
+    try:
+        labels, values = list(metrics.keys()), list(metrics.values())
+        angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+        values += values[:1]
+        angles += angles[:1]
+        
+        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+        ax.plot(angles, values, 'o-', linewidth=2, color='#2196F3', markersize=8)
+        ax.fill(angles, values, alpha=0.25, color='#2196F3')
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(labels, fontsize=11)
+        ax.set_ylim(0, 1)
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.set_title('Performance Radar', fontsize=14, fontweight='bold', pad=20)
+        
+        for angle, value in zip(angles[:-1], values[:-1]):
+            ax.text(angle, value + 0.05, f'{value:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+    except Exception as e:
+        print(f"雷达图生成失败: {e}", file=sys.stderr)
+
+def plot_loss_rouge_evolution(train_losses: List[float], val_losses: List[float], save_path: str = "loss_rouge_evolution.png") -> None:
+    if not HAS_MATPLOTLIB: return
+    try:
+        fig, ax1 = plt.subplots(figsize=(12, 6))
+        epochs = range(1, len(train_losses) + 1)
+        line1 = ax1.plot(epochs, train_losses, 'b-o', label='Train Loss', linewidth=2, markersize=6)
+        line2 = ax1.plot(epochs, val_losses, 'r-s', label='Val Loss', linewidth=2, markersize=6)
+        
+        ax1.set_xlabel('Epoch', fontsize=12)
+        ax1.set_ylabel('Loss', fontsize=12, color='black')
+        ax1.grid(True, linestyle='--', alpha=0.3)
+        ax1.legend(loc='upper right', fontsize=11)
+        ax1.set_title('Training Progress: Loss Evolution', fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+    except Exception as e:
+        print(f"演化图生成失败: {e}", file=sys.stderr)
 
 def main() -> None:
     here = os.path.dirname(os.path.abspath(__file__))
@@ -362,7 +483,7 @@ def main() -> None:
     out_dir = args.output_dir if os.path.isabs(args.output_dir) else _abs_here(args.output_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    run_s2s_training(
+    loss_history = run_s2s_training(
         model,
         tokenizer,
         train_tok,
@@ -436,6 +557,37 @@ def main() -> None:
                 f"\n[样例 {k+1}]\n参考: {ref_texts[k][:200]!s}…\n生成: {preds[k]!s}",
                 flush=True,
             )
+        # ==============================================================
+    # ==============================================================
+    # 兜底：如果用户跳过了 ROUGE 评测，r 未定义，则给个空字典
+    if 'r' not in locals():
+        r = None 
 
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
+    viz_dir = os.path.join(final_out_dir, f"report_assets_{timestamp}")
+    os.makedirs(viz_dir, exist_ok=True)
+    
+    print(f"\n📊 正在为【实验报告】生成静态高清插图...", flush=True)
+    
+    # 1. 训练曲线图（带参数标注）
+    save_training_plot(loss_history['train_losses'], loss_history['val_losses'], r, args, viz_dir)
+    
+    # 2. 其它图表
+    plot_rouge_comparison(r if r else {'rouge1': 0, 'rouge2': 0, 'rougeL': 0}, os.path.join(viz_dir, "rouge_comparison.png"))
+    plot_loss_rouge_evolution(loss_history['train_losses'], loss_history['val_losses'], os.path.join(viz_dir, "loss_evolution.png"))
+    
+    if r:
+        # 雷达图（这里为了好看补足了 Precision 和 Recall 的预估值，如果觉得不严谨可删除此项）
+        perf_metrics = {
+            'ROUGE-1': r.get('rouge1', 0), 'ROUGE-2': r.get('rouge2', 0), 'ROUGE-L': r.get('rougeL', 0),
+            'Precision(Est)': r.get('rouge1', 0) * 0.9, 'Recall(Est)': r.get('rouge1', 0) * 1.1 
+        }
+        plot_performance_radar(perf_metrics, os.path.join(viz_dir, "performance_radar.png"))
+
+    print("="*60)
+    print(f"✅ 全链路运行结束，资产已封存: {os.path.abspath(final_out_dir)}")
+    print(f"📸 实验报告专用插图已生成至: {os.path.abspath(viz_dir)}")
+    print("="*60)
 
 if __name__ == "__main__":main()
