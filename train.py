@@ -29,6 +29,8 @@ from transformers import (
     DataCollatorForSeq2Seq,
     set_seed,
 )
+from torch.utils.data import DataLoader
+from transformers import get_linear_schedule_with_warmup
 
 # =============================================================================
 # 可调超参：本地试跑可先把子集设小
@@ -135,10 +137,6 @@ def try_compute_rouge(
         "rougeL": float(np.mean(rl)) if rl else 0.0,
     }
 
-from torch.utils.data import DataLoader
-from transformers import get_linear_schedule_with_warmup
-from tqdm import tqdm
-
 def run_s2s_training(
     model: AutoModelForSeq2SeqLM,
     tokenizer: AutoTokenizer,
@@ -210,18 +208,24 @@ def run_s2s_training(
         for step, batch in enumerate(train_iter):
             batch = {k: v.to(device) for k, v in batch.items()}
 
+            is_last_batch = (step + 1) == steps_per_epoch
+            actual_accum_steps = args.grad_accum
+            if is_last_batch and steps_per_epoch % args.grad_accum != 0:
+                actual_accum_steps = steps_per_epoch % args.grad_accum
+            # ====================================
+
             if scaler is not None:
                 with torch.cuda.amp.autocast():
                     outputs = model(**batch)
                     loss = outputs.loss
-                loss = loss / args.grad_accum
+                loss = loss / actual_accum_steps   # 修改除数
                 scaler.scale(loss).backward()
             else:
                 outputs = model(**batch)
-                loss = outputs.loss / args.grad_accum
+                loss = outputs.loss / actual_accum_steps  # 修改除数
                 loss.backward()
 
-            total_train_loss += loss.item() * args.grad_accum
+            total_train_loss += loss.item() * actual_accum_steps  # 修改乘数
 
             if (step + 1) % args.grad_accum == 0 or (step + 1) == steps_per_epoch:
                 if scaler is not None:
@@ -389,8 +393,14 @@ def main() -> None:
     print("✅ 全链路运行结束，资产已封存:", os.path.abspath(final_out_dir), flush=True)
 
     if not args.no_rouge_eval and n_val > 0:
+        # === 新增：从硬盘重新加载最优权重 ===
+        print("📥 正在重新加载表现最好的模型权重，以进行 ROUGE 快评...", flush=True)
+        model = AutoModelForSeq2SeqLM.from_pretrained(final_out_dir)
+        dev = torch.device("cuda" if torch.cuda.is_available() else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu"))
+        model.to(dev)
+        # ====================================
+        
         model.eval()
-        dev = next(model.parameters()).device
         batch_size = min(4, args.batch_size)
         gen_ids, ref_texts = [], []
         with torch.no_grad():

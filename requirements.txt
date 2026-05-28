@@ -10,3 +10,6 @@ numpy>=1.24.0
 rouge-score>=0.1.2
 # tqdm 为 transformers/Trainer 依赖，可显式列出
 tqdm>=4.65.0
+gradio>=4.0.0          # 用于运行 main.py 的 A/B 测试双轨舱
+matplotlib>=3.7.0      # 用于 generate_comparison_plots.py 离线出图
+tensorboard>=2.14.0    # 用于 train.py 实时监控 Loss 曲线

@@ -9,6 +9,42 @@
 
 ---
 
+
+
+
+
+
+# 📰 PJ10: Neural News Summarizer (A/B Testing MLOps Edition)
+
+本项目基于 T5-Small 模型实现了序列到序列 (Seq2Seq) 的新闻标题自动生成。
+本项目不仅完成了严谨的模型微调与消融实验，更构建了一套**工业级的 MLOps 自动化流水线**。
+
+## ✨ 核心工程亮点 (V2 Architecture)
+- 🚀 **全自动消融流水线 (`run_pipeline.py`)**：一键执行 10 组涵盖学习率、Batch Size、序列长度与数据规模的控制变量实验，支持 OOM 异常捕获与断点跳过。
+- 📊 **动态观测与报告渲染**：
+  - 底层接入 `TensorBoard` 实现步级 (Step-level) 监控与 Early Stopping。
+  - 离线分析引擎 `generate_comparison_plots.py` 自动联表查询 JSON 指标，一键渲染多维雷达图与 Scaling Law 曲线，并自动生成 Markdown 排行榜。
+- ⚔️ **A/B Testing 对比竞技场 (`main.py`)**：基于 Gradio 构建，支持多槽位模型热加载 (Hot-Swapping)，动态读取测试集样例，直观对比不同消融策略的生成质量（已彻底解决 T5 tied-weights meta tensor 加载 Bug）。
+
+## 🔬 学术发现 (Ablation Insights)
+经过 10 组严格的控制变量实验，我们得出以下核心结论：
+1. **数据量是性能的绝对瓶颈 (Scaling Law)**：... (填入你们报告里的结论)
+2. **学习率与 Loss 的非线性关系**：... (填入结论)
+> 💡 详见本项目内置的 [消融实验分析报告1.md](./消融实验分析报告1.md)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## 📋 目录
 
 - [项目概述](#项目概述)

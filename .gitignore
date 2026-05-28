@@ -23,3 +23,12 @@ runs/
 .vscode/
 *.swp
 .DS_Store
+
+checkpoints_ablation/
+runs/
+comparison_plots/
+*.log
+results_*.json
+Auto_Leaderboard.md
+sample_articles_20.json
+data_manifest.json
