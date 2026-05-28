@@ -15,7 +15,7 @@ test_run/
 runs/
 
 # 5. 忽略生成的说明性 JSON 文件
-data_manifest.json
+#data_manifest.json
 #sample_articles_20.json
 
 # 6. 忽略其他 IDE 自动生成的配置文件（防止干扰别人）
