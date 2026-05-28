@@ -1,0 +1,25 @@
+# 1. 忽略 Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 2. 忽略数据集缓存（这个贼大，绝对不能传）
+data_cache/
+
+# 3. 忽略你生成的超参数模型文件夹（不管你跑了多少组，只要是以 t5_ 开头都忽略）
+t5_*/
+t5-news-checkpoint/
+test_run/
+
+# 4. 忽略 TensorBoard 生成的画图日志
+runs/
+
+# 5. 忽略生成的说明性 JSON 文件
+data_manifest.json
+sample_articles_20.json
+
+# 6. 忽略其他 IDE 自动生成的配置文件（防止干扰别人）
+.idea/
+.vscode/
+*.swp
+.DS_Store

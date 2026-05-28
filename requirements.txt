@@ -1,0 +1,12 @@
+# 运行 prepare_data.py 所需（Python 3.8+）
+datasets>=2.14.0
+huggingface_hub>=0.16.0
+
+# train.py / predict.py（T5 微调与推理，按需或一次性安装）
+torch>=2.0.0
+transformers>=4.36.0
+accelerate>=0.25.0
+numpy>=1.24.0
+rouge-score>=0.1.2
+# tqdm 为 transformers/Trainer 依赖，可显式列出
+tqdm>=4.65.0
