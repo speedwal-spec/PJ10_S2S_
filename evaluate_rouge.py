@@ -8,6 +8,25 @@
   python evaluate_rouge.py --ckpt t5-news-checkpoint --split test --max_samples 0
   最后一类为全量评测（可能很慢）。默认 max_samples=1000 时，在划分内按 --seed（默认 42）shuffle 后取子集，结果可复现。
 """
+# =============================================================================
+# 默认参数（现在由 configs/default.yaml 统一管理）
+# 运行方式:
+#   python evaluate_rouge.py --ckpt checkpoints_ablation/Exp-01_Baseline
+# =============================================================================
+MANIFEST = "data_manifest.json"
+CKPT_DIR = "t5-news-checkpoint"
+SPLIT = "validation"
+# 最多评测 1000 条；全量用 --max_samples 0
+MAX_SAMPLES = 1000
+BATCH_SIZE = 4
+MAX_NEW_TOKENS = 32
+NUM_BEAMS = 4
+LENGTH_PENALTY = 0.85
+NGRAM_PENALTY = 2
+OUT_JSON = ""
+# =============================================================================
+
+
 import argparse
 import json
 import os
@@ -18,22 +37,7 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-
-# =============================================================================
-# 默认与 train/predict 对齐，可用命令行覆盖
-# =============================================================================
-MANIFEST = "data_manifest.json"
-CKPT_DIR = "t5-news-checkpoint"
-SPLIT = "validation"  # 或 test
-# 默认可评 1000 条（对划分做 shuffle 后取前 1000，与 --seed 可复现）；全量用 --max_samples 0
-MAX_SAMPLES = 1000
-BATCH_SIZE = 4
-MAX_NEW_TOKENS = 32
-NUM_BEAMS = 4
-LENGTH_PENALTY = 0.85
-NGRAM_PENALTY = 2  # 0 表示关闭
-OUT_JSON = ""  # 非空则写入该路径，如 rouge_results.json
-# =============================================================================
+from configs.config_manager import load_config
 
 
 def _here() -> str:
@@ -141,7 +145,25 @@ def main() -> None:
         default=42,
         help="numpy/torch 种子；子集抽样时亦用于对划分 shuffle，保证同一命令可复现",
     )
+    p.add_argument("--config", type=str, default=None,
+                   help="配置文件路径（如 configs/default.yaml），覆盖评测默认值")
     args = p.parse_args()
+
+    # 如果指定了 --config，从 YAML 加载评测默认值
+    if args.config:
+        cfg = load_config(args.config)
+        if args.batch_size == BATCH_SIZE:
+            args.batch_size = cfg.evaluation.batch_size
+        if args.max_samples == MAX_SAMPLES:
+            args.max_samples = cfg.evaluation.max_samples
+        if args.max_new_tokens == MAX_NEW_TOKENS:
+            args.max_new_tokens = cfg.inference.max_new_tokens
+        if args.num_beams == NUM_BEAMS:
+            args.num_beams = cfg.inference.num_beams
+        if args.length_penalty == LENGTH_PENALTY:
+            args.length_penalty = cfg.inference.length_penalty
+        if args.no_repeat_ngram == NGRAM_PENALTY:
+            args.no_repeat_ngram = cfg.inference.no_repeat_ngram
 
     try:
         from rouge_score import rouge_scorer  # noqa: F401

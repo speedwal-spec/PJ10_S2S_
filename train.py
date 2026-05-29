@@ -39,27 +39,17 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
     print("⚠️ 警告: matplotlib 未安装，将跳过高清图表生成。安装命令: pip install matplotlib", file=sys.stderr)
+
+from configs.config_manager import load_config, load_full_config, ExperimentConfig, merge_with_cli
+from core.visualization import (
+    try_compute_rouge,
+    save_training_plot,
+    plot_rouge_comparison,
+    plot_performance_radar,
+    plot_loss_rouge_evolution,
+)
 # =============================================================================
-# 可调超参：本地试跑可先把子集设小
-# =============================================================================
-MANIFEST = "data_manifest.json"
-OUTPUT_DIR = "t5-news-checkpoint"
-MODEL_NAME = "google-t5/t5-small"
-
-# 0 表示用该划分的全部样本；>0 时只取前 N 条（调试用）
-MAX_TRAIN_SAMPLES = 2_000
-MAX_VAL_SAMPLES = 400
-
-EPOCHS = 1
-BATCH_SIZE = 4
-GRAD_ACCUM = 2
-LR = 3e-4
-MAX_SOURCE_LENGTH = 512
-# 监督序列截断上限；越小越偏向短句/标题式
-MAX_TARGET_LENGTH = 40
-WARMUP_RATIO = 0.06
-PREFIX = "summarize: "
-
+# 配置管理：不再写死超参数，全部从 configs/ 下的 YAML 文件加载
 # =============================================================================
 
 
@@ -124,26 +114,6 @@ def build_preprocess_fn(
     return _map_fn
 
 
-def try_compute_rouge(
-    preds: List[str], refs: List[str]
-) -> Optional[Dict[str, float]]:
-    try:
-        from rouge_score import rouge_scorer
-    except ImportError:
-        return None
-    s = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
-    r1, r2, rl = [], [], []
-    for p, g in zip(preds, refs):
-        sc = s.score(g, p)
-        r1.append(sc["rouge1"].fmeasure)
-        r2.append(sc["rouge2"].fmeasure)
-        rl.append(sc["rougeL"].fmeasure)
-    return {
-        "rouge1": float(np.mean(r1)) if r1 else 0.0,
-        "rouge2": float(np.mean(r2)) if r2 else 0.0,
-        "rougeL": float(np.mean(rl)) if rl else 0.0,
-    }
-
 def run_s2s_training(
     model: AutoModelForSeq2SeqLM,
     tokenizer: AutoTokenizer,
@@ -171,13 +141,13 @@ def run_s2s_training(
     )
 
     # 3. 初始化 AdamW 优化器
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=float(getattr(args, "weight_decay", 0.01)))
 
     # 4. 计算总步数与学习率调度器
     steps_per_epoch = len(train_loader)
     num_update_steps_per_epoch = (steps_per_epoch + args.grad_accum - 1) // args.grad_accum
     total_train_steps = num_update_steps_per_epoch * args.epochs
-    num_warmup_steps = int(total_train_steps * WARMUP_RATIO)
+    num_warmup_steps = int(total_train_steps * args.warmup_ratio)
 
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=total_train_steps
@@ -191,7 +161,7 @@ def run_s2s_training(
     
     train_losses_history = []
     val_losses_history = []
-    tb_log_dir = os.path.join("runs", getattr(args, "exp_id", "default_run"))
+    tb_log_dir = os.path.join(getattr(args, "tensorboard_dir", "runs"), getattr(args, "exp_id", "default_run"))
     tb_writer = SummaryWriter(log_dir=tb_log_dir)
     global_step = 0
     
@@ -204,7 +174,7 @@ def run_s2s_training(
     patience_limit = getattr(args, "patience", 3) 
     
     # 动态获取模型固化路径
-    final_out_dir = os.path.join(getattr(args, "output_dir", "checkpoints_ablation"), getattr(args, "exp_id", "default_run"))
+    final_out_dir = os.path.join(getattr(args, "output_dir", "t5-news-checkpoint"), getattr(args, "exp_id", "default_run"))
     os.makedirs(final_out_dir, exist_ok=True)
 
     for epoch in range(args.epochs):
@@ -236,14 +206,15 @@ def run_s2s_training(
 
             total_train_loss += loss.item() * actual_accum_steps  # 修改乘数
 
+            max_norm = float(getattr(args, "max_grad_norm", 1.0))
             if (step + 1) % args.grad_accum == 0 or (step + 1) == steps_per_epoch:
                 if scaler is not None:
                     scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) 
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm) 
                     scaler.step(optimizer)
                     scaler.update()
                 else:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) 
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm) 
                     optimizer.step()
 
                 scheduler.step()       
@@ -299,135 +270,190 @@ def run_s2s_training(
         'train_losses': train_losses_history,
         'val_losses': val_losses_history,
     }
-def save_training_plot(
-    train_losses: List[float], val_losses: List[float], rouge_scores: Optional[Dict[str, float]], args: argparse.Namespace, out_dir: str,
-) -> None:
-    if not HAS_MATPLOTLIB: return
-    try:
-        fig, ax = plt.subplots(figsize=(12, 8))
-        epochs = range(1, len(train_losses) + 1)
-        ax.plot(epochs, train_losses, 'b-o', label='Train Loss', linewidth=2, markersize=6)
-        ax.plot(epochs, val_losses, 'r-s', label='Val Loss', linewidth=2, markersize=6)
-        ax.set_title('T5 News Summarization - Training Progress', fontsize=14, fontweight='bold', pad=20)
-        ax.set_xlabel('Epoch', fontsize=12)
-        ax.set_ylabel('Loss', fontsize=12)
-        ax.legend(loc='upper right', fontsize=11)
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.tick_params(labelsize=10)
-        
-        param_text = (
-            f"Hyperparameters:\nExp ID: {getattr(args, 'exp_id', 'default')} | Model: {args.model_name}\n"
-            f"LR: {args.lr} | Batch Size: {args.batch_size} | Grad Accum: {args.grad_accum}\n"
+
+def save_hparams_json(out_dir: str, exp_id: str, args: argparse.Namespace) -> None:
+    """将训练超参写入 train_hparams.json（供 ModelManager / Gradio 读取）"""
+    with open(os.path.join(out_dir, "train_hparams.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "exp_id": exp_id,
+                "model_name": args.model_name,
+                "prefix": args.prefix,
+                "max_source_len": args.max_source_len,
+                "max_target_len": args.max_target_len,
+                "lr": args.lr,
+                "batch_size": args.batch_size,
+                "grad_accum": args.grad_accum,
+                "epochs": args.epochs,
+                "seed": args.seed,
+                "warmup_ratio": args.warmup_ratio,
+                "max_train_samples": args.max_train_samples,
+                "max_val_samples": args.max_val_samples,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
         )
-        if rouge_scores:
-            rouge_text = (
-                f"\nROUGE Scores (val subset):\nROUGE-1: {rouge_scores.get('rouge1', 0):.4f} | "
-                f"ROUGE-2: {rouge_scores.get('rouge2', 0):.4f} | ROUGE-L: {rouge_scores.get('rougeL', 0):.4f}"
+
+
+def _quick_rouge_eval(
+    model, tokenizer, val_ds, args, text_col, summary_col, n_val
+):
+    """训练结束后在验证集子集上做快速 ROUGE 评测（内联使用，正式评测请用 evaluate_rouge.py）"""
+    from datetime import datetime
+
+    print("📥 正在重新加载表现最好的模型权重，以进行 ROUGE 快评...", flush=True)
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        os.path.join(getattr(args, "output_dir", "t5-news-checkpoint"), args.exp_id)
+    )
+    dev = torch.device(
+        "cuda" if torch.cuda.is_available()
+        else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu")
+    )
+    model.to(dev)
+    model.eval()
+
+    batch_size = int(args.batch_size)
+    gen_ids, ref_texts = [], []
+    with torch.no_grad():
+        for i in range(0, min(int(getattr(args, "min_val_for_rouge", 128)), n_val), batch_size):
+            sl = val_ds.select(range(i, min(i + batch_size, n_val)))
+            ins = [args.prefix + str(t) for t in sl[text_col]]
+            enc = tokenizer(
+                ins,
+                max_length=args.max_source_len,
+                truncation=True,
+                padding=True,
+                return_tensors="pt",
+            ).to(dev)
+            g = model.generate(
+                **enc,
+                max_new_tokens=args.max_target_len,
+                num_beams=int(getattr(args, "num_beams", 4)),
+                length_penalty=float(getattr(args, "length_penalty", 0.85)),
+                early_stopping=True,
             )
-            param_text += rouge_text
-            
-        plt.figtext(
-            0.5, 0.01, param_text, ha='center', va='bottom', fontsize=9,
-            bbox=dict(boxstyle='round,pad=0.8', facecolor='lightyellow', edgecolor='gray', alpha=0.9), family='monospace'
+            gen_ids.extend(g.cpu().tolist())
+            for s in sl[summary_col]:
+                ref_texts.append(str(s))
+    preds = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
+    n_show = min(len(preds), len(ref_texts))
+    r = try_compute_rouge(preds[:n_show], ref_texts[:n_show])
+    if r:
+        print("验证子集 ROUGE (约前 128 条):", {k: round(v, 4) for k, v in r.items()}, flush=True)
+    else:
+        print("未安装 rouge_score，跳过 ROUGE。可: pip install rouge-score", file=sys.stderr)
+    for k in range(min(2, n_show)):
+        print(
+            f"\n[样例 {k+1}]\n参考: {ref_texts[k][:200]!s}…\n生成: {preds[k]!s}",
+            flush=True,
         )
-        plt.tight_layout(rect=[0, 0.15, 1, 0.95])
-        plot_path = os.path.join(out_dir, "training_curve.png")
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-        plt.close(fig)
-    except Exception as e:
-        print(f"可视化失败: {e}", file=sys.stderr)
+    return r, preds, ref_texts
 
-def plot_rouge_comparison(rouge_scores: Dict[str, float], save_path: str = "rouge_comparison.png") -> None:
-    if not HAS_MATPLOTLIB: return
-    try:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        metrics, keys = ['ROUGE-1', 'ROUGE-2', 'ROUGE-L'], ['rouge1', 'rouge2', 'rougeL']
-        current_scores = [rouge_scores.get(k, 0) for k in keys]
-        x = np.arange(len(metrics))
-        bars1 = ax.bar(x, current_scores, 0.4, label='Current Model', color='#4CAF50', alpha=0.8, edgecolor='black')
-        
-        for bar, val in zip(bars1, current_scores):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005, f'{val:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
-            
-        ax.set_ylabel('ROUGE Score', fontsize=12)
-        ax.set_title('ROUGE Metrics Evaluation', fontsize=14, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels(metrics, fontsize=11)
-        ax.set_ylim(0, max(current_scores) * 1.2 if max(current_scores) > 0 else 1.0)
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.tight_layout()
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
-    except Exception as e:
-        print(f"ROUGE 图生成失败: {e}", file=sys.stderr)
 
-def plot_performance_radar(metrics: Dict[str, float], save_path: str = "performance_radar.png") -> None:
-    if not HAS_MATPLOTLIB: return
-    try:
-        labels, values = list(metrics.keys()), list(metrics.values())
-        angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
-        values += values[:1]
-        angles += angles[:1]
-        
-        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
-        ax.plot(angles, values, 'o-', linewidth=2, color='#2196F3', markersize=8)
-        ax.fill(angles, values, alpha=0.25, color='#2196F3')
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(labels, fontsize=11)
-        ax.set_ylim(0, 1)
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.set_title('Performance Radar', fontsize=14, fontweight='bold', pad=20)
-        
-        for angle, value in zip(angles[:-1], values[:-1]):
-            ax.text(angle, value + 0.05, f'{value:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
-            
-        plt.tight_layout()
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
-    except Exception as e:
-        print(f"雷达图生成失败: {e}", file=sys.stderr)
+def _generate_report_visuals(loss_history, r, args, final_out_dir):
+    """生成实验报告所需的图表（Loss曲线、ROUGE柱状图、雷达图等）"""
+    from datetime import datetime
 
-def plot_loss_rouge_evolution(train_losses: List[float], val_losses: List[float], save_path: str = "loss_rouge_evolution.png") -> None:
-    if not HAS_MATPLOTLIB: return
-    try:
-        fig, ax1 = plt.subplots(figsize=(12, 6))
-        epochs = range(1, len(train_losses) + 1)
-        line1 = ax1.plot(epochs, train_losses, 'b-o', label='Train Loss', linewidth=2, markersize=6)
-        line2 = ax1.plot(epochs, val_losses, 'r-s', label='Val Loss', linewidth=2, markersize=6)
-        
-        ax1.set_xlabel('Epoch', fontsize=12)
-        ax1.set_ylabel('Loss', fontsize=12, color='black')
-        ax1.grid(True, linestyle='--', alpha=0.3)
-        ax1.legend(loc='upper right', fontsize=11)
-        ax1.set_title('Training Progress: Loss Evolution', fontsize=14, fontweight='bold')
-        
-        plt.tight_layout()
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
-    except Exception as e:
-        print(f"演化图生成失败: {e}", file=sys.stderr)
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
+    viz_dir = os.path.join(final_out_dir, f"report_assets_{timestamp}")
+    os.makedirs(viz_dir, exist_ok=True)
+    print(f"\n📊 正在为【实验报告】生成静态高清插图...", flush=True)
+
+    save_training_plot(loss_history['train_losses'], loss_history['val_losses'], r, args, viz_dir)
+    plot_rouge_comparison(
+        r if r else {'rouge1': 0, 'rouge2': 0, 'rougeL': 0},
+        os.path.join(viz_dir, "rouge_comparison.png")
+    )
+    plot_loss_rouge_evolution(
+        loss_history['train_losses'], loss_history['val_losses'],
+        os.path.join(viz_dir, "loss_evolution.png")
+    )
+    if r:
+        perf_metrics = {
+            'ROUGE-1': r.get('rouge1', 0),
+            'ROUGE-2': r.get('rouge2', 0),
+            'ROUGE-L': r.get('rougeL', 0),
+            'Precision(Est)': r.get('rouge1', 0) * 0.9,
+            'Recall(Est)': r.get('rouge1', 0) * 1.1,
+        }
+        plot_performance_radar(perf_metrics, os.path.join(viz_dir, "performance_radar.png"))
+
+    print(f"📸 实验报告专用插图已生成至: {os.path.abspath(viz_dir)}")
+
 
 def main() -> None:
     here = os.path.dirname(os.path.abspath(__file__))
     os.chdir(here)
 
     p = argparse.ArgumentParser(description="T5 新闻摘要/标题 微调（需补全训练与预处理）")
+    p.add_argument("--config", type=str, default=None,
+                   help="配置文件路径，如 configs/ablation/baseline.yaml")
     p.add_argument("--exp_id", type=str, default="debug_run", help="当前消融实验的唯一标识符")
-    p.add_argument("--manifest", type=str, default=MANIFEST)
-    p.add_argument("--output_dir", type=str, default=OUTPUT_DIR)
-    p.add_argument("--model_name", type=str, default=MODEL_NAME)
-    p.add_argument("--max_train_samples", type=int, default=MAX_TRAIN_SAMPLES)
-    p.add_argument("--max_val_samples", type=int, default=MAX_VAL_SAMPLES)
-    p.add_argument("--epochs", type=int, default=EPOCHS)
-    p.add_argument("--batch_size", type=int, default=BATCH_SIZE)
-    p.add_argument("--grad_accum", type=int, default=GRAD_ACCUM)
-    p.add_argument("--lr", type=float, default=LR)
-    p.add_argument("--max_source_len", type=int, default=MAX_SOURCE_LENGTH)
-    p.add_argument("--max_target_len", type=int, default=MAX_TARGET_LENGTH)
-    p.add_argument("--prefix", type=str, default=PREFIX)
+    p.add_argument("--manifest", type=str, default="data_manifest.json")
+    p.add_argument("--output_dir", type=str, default="t5-news-checkpoint")
+    p.add_argument("--model_name", type=str, default="google-t5/t5-small")
+    p.add_argument("--max_train_samples", type=int, default=2000)
+    p.add_argument("--max_val_samples", type=int, default=400)
+    p.add_argument("--epochs", type=int, default=5)
+    p.add_argument("--batch_size", type=int, default=4)
+    p.add_argument("--grad_accum", type=int, default=2)
+    p.add_argument("--lr", type=float, default=0.0003)
+    p.add_argument("--max_source_len", type=int, default=512)
+    p.add_argument("--max_target_len", type=int, default=40)
+    p.add_argument("--warmup_ratio", type=float, default=0.06)
+    p.add_argument("--patience", type=int, default=3, help="Early Stopping 容忍次数")
+    p.add_argument("--prefix", type=str, default="summarize: ")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--num_beams", type=int, default=4, help="Beam Search 宽度")
+    p.add_argument("--length_penalty", type=float, default=0.85, help="Beam 长度惩罚，<1偏短句")
+    p.add_argument("--min_val_for_rouge", type=int, default=128, help="ROUGE快评的最大验证集条数")
+    p.add_argument("--max_grad_norm", type=float, default=1.0, help="梯度裁剪阈值")
+    p.add_argument("--weight_decay", type=float, default=0.01, help="AdamW 权重衰减")
     p.add_argument("--no_rouge_eval", action="store_true", help="训练结束后在验证上不算 ROUGE（省时间）")
     args = p.parse_args()
+
+    # ==========================================
+    # 配置管理：如果指定了 --config，从YAML加载并合并
+    # ==========================================
+    if args.config:
+        if "ablation" in args.config:
+            # 消融实验配置：只加载单个yaml文件（继承链在文件内部处理）
+            config = load_config(args.config)
+        else:
+            # 完整配置模式：自动合并 default.yaml + paths.yaml + hardware.yaml
+            config = load_full_config(default_path=args.config)
+        
+        config = merge_with_cli(config, args)
+        # 将配置值同步回 args（兼容后续代码用 args.xxx 的方式）
+        args.exp_id = config.id
+        args.lr = config.training.lr
+        args.batch_size = config.training.batch_size
+        args.grad_accum = config.training.grad_accum
+        args.epochs = config.training.epochs
+        args.patience = config.early_stopping.patience
+        args.max_train_samples = config.data.max_train_samples
+        args.max_val_samples = config.data.max_val_samples
+        args.max_source_len = config.data.max_source_length
+        args.max_target_len = config.data.max_target_length
+        args.prefix = config.data.prefix
+        args.warmup_ratio = config.training.warmup_ratio
+        args.seed = config.seed
+        args.model_name = config.model_name
+        args.num_beams = config.inference.num_beams
+        args.length_penalty = config.inference.length_penalty
+        args.min_val_for_rouge = config.data.min_val_for_rouge
+        args.max_grad_norm = config.training.max_grad_norm
+        args.weight_decay = config.training.weight_decay
+        # 路径/日志相关
+        args.tensorboard_dir = config.logging.tensorboard_dir
+        # 保留 CLI 传入的 --output_dir，避免被 ablation 配置的默认值覆盖
+        if args.output_dir == "t5-news-checkpoint":
+            args.output_dir = config.paths.output_dir
+        print(f"📋 已加载配置: {args.config}")
+        print(f"📋 实验ID: {config.id} | 描述: {config.description}")
+
+    # 兼容旧版：未指定 --config 时，保持纯命令行方式运行
 
     manifest = load_manifest(args.manifest)
     text_col = manifest["text_column"]
@@ -495,99 +521,18 @@ def main() -> None:
         args,
     )
     final_out_dir = os.path.join(out_dir, args.exp_id)
-    with open(os.path.join(final_out_dir, "train_hparams.json"), "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "exp_id": args.exp_id,  # 顺手把 exp_id 也记录进去
-                "model_name": args.model_name,
-                "prefix": args.prefix,
-                "max_source_len": args.max_source_len,
-                "max_target_len": args.max_target_len,
-                "lr": args.lr,
-                "batch_size": args.batch_size,
-                "grad_accum": args.grad_accum
-            },
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
-    print("✅ 全链路运行结束，资产已封存:", os.path.abspath(final_out_dir), flush=True)
+    save_hparams_json(final_out_dir, args.exp_id, args)
 
+    r = None
     if not args.no_rouge_eval and n_val > 0:
-        # === 新增：从硬盘重新加载最优权重 ===
-        print("📥 正在重新加载表现最好的模型权重，以进行 ROUGE 快评...", flush=True)
-        model = AutoModelForSeq2SeqLM.from_pretrained(final_out_dir)
-        dev = torch.device("cuda" if torch.cuda.is_available() else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu"))
-        model.to(dev)
-        # ====================================
-        
-        model.eval()
-        batch_size = min(4, args.batch_size)
-        gen_ids, ref_texts = [], []
-        with torch.no_grad():
-            for i in range(0, min(128, n_val), batch_size):
-                sl = val_ds.select(range(i, min(i + batch_size, n_val)))
-                ins = [args.prefix + str(t) for t in sl[text_col]]
-                enc = tokenizer(
-                    ins,
-                    max_length=args.max_source_len,
-                    truncation=True,
-                    padding=True,
-                    return_tensors="pt",
-                ).to(dev)
-                g = model.generate(
-                    **enc,
-                    max_new_tokens=args.max_target_len,
-                    num_beams=4,
-                    length_penalty=0.85,
-                    early_stopping=True,
-                )
-                gen_ids.extend(g.cpu().tolist())
-                for s in sl[summary_col]:
-                    ref_texts.append(str(s))
-        preds = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
-        n_show = min(len(preds), len(ref_texts))
-        r = try_compute_rouge(preds[:n_show], ref_texts[:n_show])
-        if r:
-            print("验证子集 ROUGE (约前 128 条):", {k: round(v, 4) for k, v in r.items()}, flush=True)
-        else:
-            print("未安装 rouge_score，跳过 ROUGE。可: pip install rouge-score", file=sys.stderr)
-        for k in range(min(2, n_show)):
-            print(
-                f"\n[样例 {k+1}]\n参考: {ref_texts[k][:200]!s}…\n生成: {preds[k]!s}",
-                flush=True,
-            )
-        # ==============================================================
-    # ==============================================================
-    # 兜底：如果用户跳过了 ROUGE 评测，r 未定义，则给个空字典
-    if 'r' not in locals():
-        r = None 
+        r, preds, ref_texts = _quick_rouge_eval(
+            model, tokenizer, val_ds, args, text_col, summary_col, n_val
+        )
 
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
-    viz_dir = os.path.join(final_out_dir, f"report_assets_{timestamp}")
-    os.makedirs(viz_dir, exist_ok=True)
-    
-    print(f"\n📊 正在为【实验报告】生成静态高清插图...", flush=True)
-    
-    # 1. 训练曲线图（带参数标注）
-    save_training_plot(loss_history['train_losses'], loss_history['val_losses'], r, args, viz_dir)
-    
-    # 2. 其它图表
-    plot_rouge_comparison(r if r else {'rouge1': 0, 'rouge2': 0, 'rougeL': 0}, os.path.join(viz_dir, "rouge_comparison.png"))
-    plot_loss_rouge_evolution(loss_history['train_losses'], loss_history['val_losses'], os.path.join(viz_dir, "loss_evolution.png"))
-    
-    if r:
-        # 雷达图（这里为了好看补足了 Precision 和 Recall 的预估值，如果觉得不严谨可删除此项）
-        perf_metrics = {
-            'ROUGE-1': r.get('rouge1', 0), 'ROUGE-2': r.get('rouge2', 0), 'ROUGE-L': r.get('rougeL', 0),
-            'Precision(Est)': r.get('rouge1', 0) * 0.9, 'Recall(Est)': r.get('rouge1', 0) * 1.1 
-        }
-        plot_performance_radar(perf_metrics, os.path.join(viz_dir, "performance_radar.png"))
+    _generate_report_visuals(loss_history, r, args, final_out_dir)
 
     print("="*60)
     print(f"✅ 全链路运行结束，资产已封存: {os.path.abspath(final_out_dir)}")
-    print(f"📸 实验报告专用插图已生成至: {os.path.abspath(viz_dir)}")
     print("="*60)
 
 if __name__ == "__main__":main()

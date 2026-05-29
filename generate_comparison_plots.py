@@ -13,14 +13,24 @@ matplotlib.use('Agg') # 无头模式，确保在无 GUI 的服务器上也能作
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+from configs.config_manager import load_full_config
+
+# ==========================================
+# 全局路径与显示配置
+# ==========================================
+_cfg = load_full_config()
+# 实验基准目录
+CKPT_BASE = _cfg.paths.ablation_base
 
 # ==========================================
 # 1. 核心数据引擎 (Data Ingestion Engine)
 # ==========================================
-def load_dynamic_results(results_dir=".", ckpt_base="checkpoints_ablation"):
+def load_dynamic_results(results_dir=".", ckpt_base=None):
     """
     动态扫描目录下的所有实验指标，并与 Checkpoint 中的超参数进行 Join。
     """
+    if ckpt_base is None:
+        ckpt_base = CKPT_BASE
     experiments = {}
     
     # 遍历当前目录下所有流水线产出的评测文件
@@ -61,8 +71,8 @@ def load_dynamic_results(results_dir=".", ckpt_base="checkpoints_ablation"):
 # ==========================================
 # 2. 全局样式配置 (Aesthetics)
 # ==========================================
-OUTPUT_DIR = Path("comparison_plots")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+COMPARISON_OUTPUT_DIR = Path(_cfg.visualization.output_dir)
+COMPARISON_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 强制使用更清晰的无衬线字体，并解决负号显示问题
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
@@ -100,7 +110,7 @@ def plot_rouge_comparison(data_dict):
     ax.grid(axis='y', linestyle='--', alpha=0.4)
     
     plt.tight_layout()
-    save_path = OUTPUT_DIR / '1_rouge_comparison_dynamic.png'
+    save_path = COMPARISON_OUTPUT_DIR / '1_rouge_comparison_dynamic.png'
     plt.savefig(save_path)
     plt.close()
     print(f"📈 [1/4] 生成 ROUGE 柱状图 -> {save_path.name}")
@@ -132,7 +142,7 @@ def plot_performance_ranking(data_dict):
     
     ax.grid(axis='x', linestyle='--', alpha=0.3)
     plt.tight_layout()
-    save_path = OUTPUT_DIR / '2_performance_leaderboard.png'
+    save_path = COMPARISON_OUTPUT_DIR / '2_performance_leaderboard.png'
     plt.savefig(save_path)
     plt.close()
     print(f" [2/4] 生成排行榜横向图 -> {save_path.name}")
@@ -163,7 +173,7 @@ def plot_data_scaling(data_dict):
     ax.grid(True, linestyle='--', alpha=0.4)
     
     plt.tight_layout()
-    save_path = OUTPUT_DIR / '3_data_scaling_law.png'
+    save_path = COMPARISON_OUTPUT_DIR / '3_data_scaling_law.png'
     plt.savefig(save_path)
     plt.close()
     print(f" [3/4] 生成数据 Scaling 曲线 -> {save_path.name}")
@@ -216,7 +226,7 @@ def plot_radar_chart(data_dict):
     ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
     
     plt.tight_layout()
-    save_path = OUTPUT_DIR / '4_top3_radar.png'
+    save_path = COMPARISON_OUTPUT_DIR / '4_top3_radar.png'
     plt.savefig(save_path)
     plt.close()
     print(f"🕸️  [4/4] 生成 Top3 性能雷达图 -> {save_path.name}")
@@ -242,5 +252,5 @@ if __name__ == '__main__':
         plot_radar_chart(dynamic_data)
         export_markdown_leaderboard(dynamic_data)
         print("\n" + "=" * 60)
-        print(f"🎉 所有图表均已根据最新 JSON 动态渲染至: {OUTPUT_DIR.absolute()}")
+        print(f"🎉 所有图表均已根据最新 JSON 动态渲染至: {COMPARISON_OUTPUT_DIR.absolute()}")
         print("=" * 60)

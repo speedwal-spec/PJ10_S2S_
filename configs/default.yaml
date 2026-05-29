@@ -1,0 +1,60 @@
+# configs/default.yaml
+# ─── 项目基本信息 ───
+project:
+  name: "T5 News Summarizer"
+  seed: 42
+
+# ─── 模型 ───
+model:
+  name: "google-t5/t5-small"
+
+# ─── 数据 ───
+data:
+  manifest: "data_manifest.json"
+  max_train_samples: 2000
+  max_val_samples: 400
+  max_source_length: 512
+  max_target_length: 40
+  prefix: "summarize: "
+  min_val_for_rouge: 128          # 训练中ROUGE快评条数
+
+# ─── 训练 ───
+training:
+  epochs: 5
+  batch_size: 4
+  grad_accum: 2
+  lr: 0.0003
+  warmup_ratio: 0.06
+  weight_decay: 0.01
+  max_grad_norm: 1.0              # 梯度裁剪
+  label_pad_token_id: -100
+
+# ─── Early Stopping ───
+early_stopping:
+  patience: 3                     # 容忍轮数
+  monitor: "val_loss"
+
+# ─── TensorBoard ───
+logging:
+  tensorboard_dir: "runs"
+
+# ─── 推理/解码 ───
+inference:
+  max_new_tokens: 40
+  num_beams: 4
+  length_penalty: 0.85
+  no_repeat_ngram: 2
+  early_stopping: true
+
+# ─── 评测 ───
+evaluation:
+  split: "validation"
+  max_samples: 1000
+  batch_size: 4
+  output_json: ""                 # 空=只打印
+
+# ─── 可视化 ───
+visualization:
+  output_dir: "comparison_plots"
+  font: ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
+  dpi: 150

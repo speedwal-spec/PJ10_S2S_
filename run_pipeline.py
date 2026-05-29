@@ -2,20 +2,68 @@ import os
 import subprocess
 import time
 import logging
+import glob
+from configs.config_manager import load_config, load_full_config
 
 # ==========================================
 # 0. 工业级全局日志配置 (Logging Setup)
 # ==========================================
-# 自动生成带时间戳的日志文件，例如：pipeline_20260528_1200.log
 log_filename = f"pipeline_{time.strftime('%Y%m%d_%H%M')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(message)s",
     handlers=[
-        logging.FileHandler(log_filename, encoding='utf-8'), # 永久保存到硬盘防丢失
-        logging.StreamHandler() # 同时显示在屏幕上
+        logging.FileHandler(log_filename, encoding='utf-8'),
+        logging.StreamHandler()
     ]
 )
+
+# ==========================================
+# 1. 从 YAML 配置文件自动读取消融实验矩阵
+# ==========================================
+def load_ablation_experiments(config_dir: str = "configs/ablation") -> list:
+    """
+    扫描 configs/ablation/ 目录下的所有YAML文件，自动构建实验矩阵。
+    
+    Returns:
+        list of dict，每个dict包含该实验的配置参数
+    """
+    yaml_files = sorted(glob.glob(os.path.join(config_dir, "*.yaml")))
+    
+    if not yaml_files:
+        logging.warning(f"⚠️ 未在 {config_dir}/ 找到任何YAML配置文件！")
+        return []
+    
+    experiments = []
+    for yaml_path in yaml_files:
+        # 跳过 baseline.yaml（作为继承父类，不会直接运行）
+        if "baseline" in os.path.basename(yaml_path).lower():
+            continue
+            
+        try:
+            config = load_config(yaml_path)
+            
+            exp = {
+                "id": config.id,
+                "lr": config.training.lr,
+                "bs": config.training.batch_size,
+                "ga": config.training.grad_accum,
+                "epochs": config.training.epochs,
+                "samples": config.data.max_train_samples,
+                "max_src": config.data.max_source_length,
+                "max_tgt": config.data.max_target_length,
+                "prefix": config.data.prefix,
+                "config_file": os.path.basename(yaml_path),
+            }
+            experiments.append(exp)
+            logging.info(f"📋 发现实验 [{exp['id']}] <- {exp['config_file']}")
+            
+        except Exception as e:
+            logging.error(f"❌ 加载 {yaml_path} 失败: {e}")
+            continue
+    
+    return experiments
+
 
 def run_command(cmd, desc):
     """带日志记录的命令行执行器"""
@@ -23,12 +71,29 @@ def run_command(cmd, desc):
     logging.info(f"⚙️  [Pipeline 阶段]: {desc}")
     logging.info(f"💻 [执行命令]: {cmd}")
     logging.info(f"{'='*60}\n")
-    # check=True 表示如果该命令报错（如 OOM），会向外抛出异常供上层捕获
     subprocess.run(cmd, shell=True, check=True)
+
+
+def _find_ckpt(exp_id: str, *search_dirs: str):
+    """在多个目录中查找实验的 checkpoint"""
+    for base_dir in search_dirs:
+        candidate = os.path.join(base_dir, exp_id)
+        if os.path.isdir(candidate) and os.path.isfile(os.path.join(candidate, "config.json")):
+            return candidate
+    return None
+
 
 def main():
     logging.info("🚀 T5-News 自动化多维消融实验流水线启动！\n")
     start_time = time.time()
+    
+    # 从 default.yaml 加载路径和评测配置
+    cfg = load_full_config()
+    OUTPUT_BASE = cfg.paths.ablation_base
+    EVAL_MAX_SAMPLES = cfg.evaluation.max_samples
+    LEGACY_DIR = "t5-news-checkpoint"
+    logging.info(f"📋 消融输出目录: {OUTPUT_BASE} | 兼容目录: {LEGACY_DIR} | 评测样本数: {EVAL_MAX_SAMPLES}")
+    os.makedirs(OUTPUT_BASE, exist_ok=True)
 
     # 1. 确保数据就绪
     try:
@@ -38,78 +103,61 @@ def main():
         return
 
     # ==========================================
-    # 2. 定义严谨的消融实验矩阵 (完美融合 V1 的科研严谨性)
+    # 2. 从 YAML 配置文件自动加载实验矩阵
     # ==========================================
-    ablation_matrix = [
-        # 1. 对照组 (Baseline)
-        {"id": "Exp-01_Baseline",  "lr": 3e-4, "bs": 4, "ga": 2, "samples": 2000, "max_src": 512, "max_tgt": 40, "epochs": 3},
-        
-        # 2. 学习率消融 (Learning Rate)
-        {"id": "Exp-02_LowLR",     "lr": 1e-4, "bs": 4, "ga": 2, "samples": 2000, "max_src": 512, "max_tgt": 40, "epochs": 3},
-        {"id": "Exp-03_HighLR",    "lr": 1e-3, "bs": 4, "ga": 2, "samples": 2000, "max_src": 512, "max_tgt": 40, "epochs": 3},
-        
-        # 3. 显存与批次消融 (Batch Size & Grad Accum)
-        {"id": "Exp-04_SmallBS",   "lr": 3e-4, "bs": 2, "ga": 4, "samples": 2000, "max_src": 512, "max_tgt": 40, "epochs": 3},
-        {"id": "Exp-05_LargeBS",   "lr": 3e-4, "bs": 8, "ga": 1, "samples": 2000, "max_src": 512, "max_tgt": 40, "epochs": 3},
-        {"id": "Exp-06_NoAccum",   "lr": 3e-4, "bs": 4, "ga": 1, "samples": 2000, "max_src": 512, "max_tgt": 40, "epochs": 3},
-        
-        # 4. 序列长度消融 (Sequence Length)
-        {"id": "Exp-07_ShortSeq",  "lr": 3e-4, "bs": 4, "ga": 2, "samples": 2000, "max_src": 256, "max_tgt": 30, "epochs": 3},
-        {"id": "Exp-08_LongSeq",   "lr": 3e-4, "bs": 4, "ga": 2, "samples": 2000, "max_src": 768, "max_tgt": 50, "epochs": 3},
-        
-        # 5. 数据规模 Scaling Law (Data Volume)
-        {"id": "Exp-09_Data40",    "lr": 3e-4, "bs": 4, "ga": 2, "samples": 40,   "max_src": 512, "max_tgt": 40, "epochs": 3},
-        {"id": "Exp-10_Data120",   "lr": 3e-4, "bs": 4, "ga": 2, "samples": 120,  "max_src": 512, "max_tgt": 40, "epochs": 3},
-    ]
+    ablation_matrix = load_ablation_experiments()
+    
+    if not ablation_matrix:
+        logging.error("❌ 未找到任何实验配置，流水线中止。请先在 configs/ablation/ 下添加YAML文件")
+        return
 
-    # 所有模型统一存放在这个大目录下，里面再按 exp_id 严格隔离
-    OUTPUT_BASE = "checkpoints_ablation"
-    os.makedirs(OUTPUT_BASE, exist_ok=True)
-
-    logging.info(f"📊 本次流水线共包含 {len(ablation_matrix)} 组独立消融实验。\n")
+    logging.info(f"📊 本次流水线共包含 {len(ablation_matrix)} 组消融实验（来自 configs/ablation/）\n")
 
     for exp in ablation_matrix:
         logging.info(f"\n" + "🌟"*40)
-        logging.info(f"正在启动子任务 >>> {exp['id']}")
+        logging.info(f"正在启动子任务 >>> {exp['id']} (来自 {exp['config_file']})")
         logging.info("🌟"*40)
-        
-        # 构建训练命令，补齐了 --max_target_len 参数！
+
+        # 构建训练命令
         train_cmd = (
             f"python train.py "
-            f"--exp_id {exp['id']} "
+            f"--config configs/ablation/{exp['config_file']} "
             f"--output_dir {OUTPUT_BASE} "
-            f"--lr {exp['lr']} "
-            f"--batch_size {exp['bs']} "
-            f"--grad_accum {exp['ga']} "
-            f"--epochs {exp['epochs']} "
-            f"--max_train_samples {exp['samples']} "
-            f"--max_source_len {exp['max_src']} "
-            f"--max_target_len {exp['max_tgt']} "  
-            f"--no_rouge_eval" 
         )
-        
-        # 组装评估命令
-        ckpt_path = os.path.join(OUTPUT_BASE, exp['id'])
+
+        # 先搜索已有 checkpoint（兼容 checkpoints_ablation/ 和 t5-news-checkpoint/）
+        ckpt_path = _find_ckpt(exp['id'], OUTPUT_BASE, LEGACY_DIR)
+
+        # 如果没有现成的 checkpoint，先训练
+        if ckpt_path is None:
+            try:
+                run_command(train_cmd, f"训练 - {exp['id']}")
+            except subprocess.CalledProcessError:
+                logging.warning(f"❌ {exp['id']} 训练失败，跳过")
+                continue
+            # 训练后重新定位 checkpoint
+            ckpt_path = _find_ckpt(exp['id'], OUTPUT_BASE, LEGACY_DIR)
+            if ckpt_path is None:
+                logging.warning(f"❌ {exp['id']} 训练后仍未找到 checkpoint，跳过")
+                continue
+            logging.info(f"📁 训练完成，在 {os.path.dirname(ckpt_path)}/ 找到 checkpoint")
+        else:
+            logging.info(f"📁 已有现成 checkpoint（{ckpt_path}），跳过训练")
+
+        # 评测
         result_json = f"results_{exp['id']}.json"
-        
         eval_cmd = (
             f"python evaluate_rouge.py "
             f"--ckpt {ckpt_path} "
             f"--output_json {result_json} "
-            f"--max_samples 1000" 
+            f"--max_samples {EVAL_MAX_SAMPLES}"
         )
 
-        # ==========================================
-        # 核心升级：OOM 防御与高可用容错机制
-        # ==========================================
         try:
-            run_command(train_cmd, f"正式炼丹点火 - {exp['id']}")
-            run_command(eval_cmd, f"客观指标评测 - {exp['id']}")
+            run_command(eval_cmd, f"评测 - {exp['id']}")
             logging.info(f"✅ {exp['id']} 顺利完结，指标已固化至 {result_json}")
-
-        except subprocess.CalledProcessError as e:
-            logging.warning(f"❌ 警告: {exp['id']} 运行时发生致命错误 (大概率是显存溢出 OOM)。")
-            logging.info("⏭️ 流水线具有高容错性，正在自动切入下一组消融实验...")
+        except subprocess.CalledProcessError:
+            logging.warning(f"❌ {exp['id']} 评测失败，跳过")
             continue
 
     # 3. 总体耗时统计与收尾指引

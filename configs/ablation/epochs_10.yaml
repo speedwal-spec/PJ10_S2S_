@@ -1,0 +1,10 @@
+# configs/ablation/epochs_10.yaml
+# 新实验 - 更多训练轮数（验证早停机制有效性）
+extends: baseline.yaml
+
+experiment:
+  id: "epochs_10"
+  description: "10轮训练（对比基准5轮，验证早停是否被触发）"
+
+training:
+  epochs: 10

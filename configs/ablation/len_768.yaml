@@ -1,0 +1,11 @@
+# configs/ablation/len_768.yaml
+# 消融实验 - 长序列（对应实验记录表 Exp-3c）
+extends: baseline.yaml
+
+experiment:
+  id: "len_768"
+  description: "输入长度=768, 生成长度=50（对比基准512/40）"
+
+data:
+  max_source_length: 768
+  max_target_length: 50

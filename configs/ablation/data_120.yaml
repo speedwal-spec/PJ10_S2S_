@@ -1,0 +1,11 @@
+# configs/ablation/data_120.yaml
+# 消融实验 - 中等数据量（对应实验记录表 Exp-5c）
+extends: baseline.yaml
+
+experiment:
+  id: "data_120"
+  description: "120条训练数据（对比基准80条）"
+
+data:
+  max_train_samples: 120
+  max_val_samples: 30

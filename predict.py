@@ -16,11 +16,13 @@ from typing import Any, Dict, List, Tuple
 
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from configs.config_manager import load_config
 
 DEFAULT_PREFIX = "summarize: "
 SAMPLES_NAME = "sample_articles_20.json"
 
 # 生成更短、更像「标题/一行摘要」时优先调小 max_new_tokens；length_penalty<1 在 beam 时偏短句
+# 提示：这些默认值现在统一在 configs/default.yaml 的 inference 字段中定义
 PRED_MAX_NEW_TOKENS = 32
 PRED_LENGTH_PENALTY = 0.85
 
@@ -64,6 +66,7 @@ def main() -> None:
     os.chdir(here)
 
     p = argparse.ArgumentParser(description="T5 新闻标题/摘要生成（默认可交互选样例）")
+    p.add_argument("--config", type=str, default=None, help="配置文件路径（如 configs/default.yaml），覆盖推理默认值")
     p.add_argument("--ckpt", type=str, default="t5-news-checkpoint", help="train.py 保存的目录")
     p.add_argument(
         "--samples",
@@ -92,6 +95,18 @@ def main() -> None:
     )
     p.add_argument("--no_repeat_ngram", type=int, default=2, help="0 表示关闭 ngram 惩罚")
     args = p.parse_args()
+
+    # 如果指定了 --config，从 YAML 加载推理默认值（仅当命令行未指定时生效）
+    if args.config:
+        cfg = load_config(args.config)
+        if args.max_new_tokens == PRED_MAX_NEW_TOKENS:
+            args.max_new_tokens = cfg.inference.max_new_tokens
+        if args.num_beams == 4:
+            args.num_beams = cfg.inference.num_beams
+        if args.length_penalty == PRED_LENGTH_PENALTY:
+            args.length_penalty = cfg.inference.length_penalty
+        if args.no_repeat_ngram == 2:
+            args.no_repeat_ngram = cfg.inference.no_repeat_ngram
 
     ck = _ckpt_dir(args.ckpt)
     if not os.path.isdir(ck) or not os.path.isfile(os.path.join(ck, "config.json")):

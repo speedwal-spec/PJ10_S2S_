@@ -1,0 +1,11 @@
+# configs/ablation/bs_2_ga_4.yaml
+# 消融实验 - 小Batch Size（对应实验记录表 Exp-2a）
+extends: baseline.yaml
+
+experiment:
+  id: "bs_2_ga_4"
+  description: "批量大小=2, 梯度累积=4（对比基准bs=4, ga=2）"
+
+training:
+  batch_size: 2
+  grad_accum: 4

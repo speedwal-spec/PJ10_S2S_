@@ -1,0 +1,39 @@
+# configs/hardware.yaml
+# ─── 硬件配置 ───
+# 如果你的电脑没有GPU，所有设备相关配置会自动降级到CPU
+
+# ─── 设备选择 ───
+device:
+  # 优先级：cuda > mps (Apple Silicon) > cpu
+  # auto = 自动检测可用设备
+  preferred: "auto"    # 可选：auto / cuda / cpu / mps
+  
+  # 如果使用CPU，限制使用的线程数（0=全部）
+  cpu_threads: 0
+
+# ─── 显存/内存优化 ───
+memory:
+  # AMP混合精度（有GPU时建议开启）
+  amp: true            # true / false
+  
+  # 梯度累积步数（显存不够就调大这个值）
+  grad_accum: 2
+  
+  # 梯度裁剪阈值
+  max_grad_norm: 1.0
+  
+  # 数据加载器的工作进程数（0=主进程加载，cpu上建议0）
+  dataloader_workers: 0
+  
+  # 是否启用pin_memory（GPU时建议true，CPU时false）
+  pin_memory: false
+
+# ─── 性能提示 ───
+# CPU训练建议：
+#   1. grad_accum 可以调大到 4 或 8
+#   2. batch_size 调小到 2
+#   3. epochs 调少到 3
+# GPU训练建议：
+#   1. batch_size 可调大到 8 或 16
+#   2. grad_accum 保持 1-2
+#   3. 开启 amp: true

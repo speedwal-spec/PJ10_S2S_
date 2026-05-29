@@ -1,0 +1,10 @@
+# configs/ablation/lr_0_001.yaml
+# 消融实验 - 高学习率
+extends: baseline.yaml
+
+experiment:
+  id: "lr_0.001"
+  description: "学习率=0.001（对比基准0.0003）"
+
+training:
+  lr: 0.001
