@@ -12,8 +12,9 @@
 - 🚀 **全自动消融流水线 (`run_pipeline.py`)**：扫描 YAML 配置自动执行多组控制变量实验，支持 OOM 异常捕获与断点跳过
 - ⚙️ **YAML 配置系统 (`configs/`)**：继承链式配置管理，支持 default.yaml + paths.yaml + hardware.yaml 分层合并
 - ⚔️ **A/B 对比竞技场 (`ui/gradio_app.py`)**：双槽位模型热加载（Hot-Swapping），动态读取测试集样例，直观对比不同实验配置的生成质量
+- 🌐 **微服务 API 框架 (`api/`)**：预留了标准的 RESTful 接口设计，支持多版本模型热加载与流式输出（Streaming）
+- 🛰️ **星型联邦调度引擎 (`distributed_core/`)**：面向多云异构算力的分布式训练框架，支持 Kaggle/HF 等多平台算力并联调度
 - 📊 **训练内联可视化 (`core/visualization.py`)**：自动生成 Loss 曲线、ROUGE 柱状图、性能雷达图
-- 🔄 **显存安全的热切换 (`core/model_manager.py`)**：防止双倍峰值 OOM，3 级 hparams 补全兼容旧版 checkpoint
 
 ## 📋 目录
 
@@ -193,8 +194,15 @@ PJ10_S2S_/
 ├── requirements.txt
 ├── data_manifest.json           # 数据集元数据
 ├── sample_articles_20.json      # 20 条测试样例
-├── 实验指导.md                  # 实验要求文档
-├── 项目开发记录.md              # 项目改动与架构说明
+│
+├── api/                         # ★ 微服务接口框架
+│   ├── __init__.py
+│   └── service_framework.py     #   RESTful API 架构定义 (Mock Mode)
+│
+├── distributed_core/            # ★ 分布式联邦调度框架
+│   ├── __init__.py
+│   ├── cloud_dispatcher.py      #   星型主控节点与异构 Worker 定义
+│   └── message_queue.py         #   异步任务队列与结果收集器
 │
 ├── configs/                     # ★ YAML 配置系统
 │   ├── config_manager.py        #   配置加载 & 继承解析
