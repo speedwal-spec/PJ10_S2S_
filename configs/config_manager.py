@@ -9,6 +9,7 @@
 import os
 import yaml
 import argparse
+import sys
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
@@ -253,9 +254,15 @@ def load_full_config(
 def merge_with_cli(config: ExperimentConfig, args: argparse.Namespace) -> ExperimentConfig:
     """
     命令行参数覆盖配置文件的值
-    （如果命令行指定了，就用命令行的）
+    （修复：仅当命令行参数被用户显式指定时才覆盖，避免默认值污染）
     """
-    # 常用的覆盖项
+    # 获取命令行实际传入的参数集合
+    cli_args_set = set()
+    for arg in vars(args):
+        # 检查该参数是否在命令行字符串中出现过
+        if f"--{arg.replace('_', '-')}" in ' '.join(sys.argv):
+            cli_args_set.add(arg)
+
     overrides = {
         'lr': ('training', 'lr'),
         'batch_size': ('training', 'batch_size'),
@@ -269,8 +276,9 @@ def merge_with_cli(config: ExperimentConfig, args: argparse.Namespace) -> Experi
     }
 
     for cli_key, (section, attr) in overrides.items():
-        cli_val = getattr(args, cli_key, None)
-        if cli_val is not None:
+        # 只有当用户在命令行显式输入了该参数，才进行覆盖
+        if cli_key in cli_args_set:
+            cli_val = getattr(args, cli_key)
             section_obj = getattr(config, section)
             setattr(section_obj, attr, cli_val)
 

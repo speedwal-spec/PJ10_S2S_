@@ -11,8 +11,8 @@ model:
 # ─── 数据 ───
 data:
   manifest: "data_manifest.json"
-  max_train_samples: 80
-  max_val_samples: 20
+  max_train_samples: 2000
+  max_val_samples: 400
   max_source_length: 512
   max_target_length: 40
   prefix: "summarize: "
