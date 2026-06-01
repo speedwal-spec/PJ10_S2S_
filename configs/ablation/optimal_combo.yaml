@@ -3,12 +3,12 @@
 extends: baseline.yaml
 
 experiment:
-  id: "lr_0.001_data_120"
-  description: "组合优化 - lr=0.001 + 120条数据（单变量最优值组合）"
+  id: "lr_0.001_data_800"
+  description: "组合优化 - lr=0.001 + 800条数据（单变量最优值组合[现在可能不是了]）"
 
 training:
   lr: 0.001
 
 data:
-  max_train_samples: 120
-  max_val_samples: 30
+  max_train_samples: 800
+  max_val_samples: 200

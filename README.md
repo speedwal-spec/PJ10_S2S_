@@ -256,11 +256,8 @@ python run_pipeline.py
 ### 3. 评测模型
 
 ```bash
-# 在验证集上评测（默认 1000 条子集，可复现）
-python evaluate_rouge.py --ckpt t5-news-checkpoint/my_exp
-
-# 在测试集上全量评测（较慢）
-python evaluate_rouge.py --ckpt t5-news-checkpoint/my_exp --split test --max_samples 0
+# 在验证集上评测（默认 1000 条子集，可复现，切换其他ckpt路径可选择评测不同参数模型）
+python evaluate_rouge.py --ckpt t5-news-checkpoint/baseline --split validation --max_samples 1000 --seed 42 --num_beams 4 --max_new_tokens 40
 ```
 
 ### 4. 交互推理
@@ -283,6 +280,13 @@ python -c "from ui.gradio_app import launch; launch()"
 tensorboard --logdir=runs
 ```
 
+### 7. 切换其他模型
+```bash
+# 修改configs/default.yaml中的model_name
+python train.py --config configs/ablation/baseline.yaml
+# 或直接传参
+python train.py --model_name "google-t5/t5-base
+```
 ---
 
 ## 💡 实验拓展方向
@@ -294,27 +298,4 @@ tensorboard --logdir=runs
 - **可视化增强**：注意力权重可视化、生成结果对比表
 - **流水线扩展**：添加超参搜索（Grid Search / Optuna）自动调优
 
----
 
-## 📚 引用与参考
-
-### 相关论文
-
-1. **T5 模型**: Raffel, C., et al. "Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer." *JMLR* 2020.
-2. **ROUGE 评估**: Lin, C.Y. "ROUGE: A Package for Automatic Evaluation of Summaries." *ACL* 2004.
-
-### 数据集
-
-- **CNN/DailyMail**: Hermann, K.M., et al. "Teaching Machines to Read and Comprehend." *NeurIPS* 2015.
-
-### 工具库
-
-- [Hugging Face Transformers](https://huggingface.co/transformers/)
-- [PyTorch](https://pytorch.org/)
-- [Gradio](https://gradio.app/)
-- [ROUGE-Score](https://pypi.org/project/rouge-score/)
-
----
-
-**最后更新**: 2026-05-25  
-**更多细节**: 详见 [项目开发记录.md](./项目开发记录.md)

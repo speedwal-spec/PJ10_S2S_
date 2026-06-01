@@ -61,10 +61,11 @@ def save_training_plot(
         param_text = (
             f"Hyperparameters:\nExp ID: {getattr(args, 'exp_id', 'default')} | Model: {args.model_name}\n"
             f"LR: {args.lr} | Batch Size: {args.batch_size} | Grad Accum: {args.grad_accum}\n"
+            f"Epochs: {getattr(args, 'epochs', 'N/A')} | Source Len: {getattr(args, 'max_source_len', 'N/A')}\n"
         )
         if rouge_scores:
             rouge_text = (
-                f"\nROUGE Scores (val subset):\nROUGE-1: {rouge_scores.get('rouge1', 0):.4f} | "
+                f"\nROUGE Scores (Quick Eval on val subset):\nROUGE-1: {rouge_scores.get('rouge1', 0):.4f} | "
                 f"ROUGE-2: {rouge_scores.get('rouge2', 0):.4f} | ROUGE-L: {rouge_scores.get('rougeL', 0):.4f}"
             )
             param_text += rouge_text

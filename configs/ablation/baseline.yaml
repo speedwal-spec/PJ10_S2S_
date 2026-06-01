@@ -8,5 +8,5 @@ experiment:
   description: "消融实验基准 - lr=0.0003, bs=4, ga=2"
 
 data:
-  max_train_samples: 80
-  max_val_samples: 20
+  max_train_samples: 400    # 训练样本数
+  max_val_samples: 100     # 快速评测样本数

@@ -3,7 +3,7 @@
 extends: baseline.yaml
 
 experiment:
-  id: "no_accum"
+  id: "bs_4_ga_1"
   description: "无梯度累积 ga=1（对比基准 ga=2，保持 bs=4 不变）"
 
 training:
