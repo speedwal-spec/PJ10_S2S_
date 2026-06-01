@@ -1,0 +1,10 @@
+# configs/ablation/epochs_3.yaml
+# 更少训练轮数
+extends: baseline.yaml
+
+experiment:
+  id: "epochs_3"
+  description: "3轮训练"
+
+training:
+  epochs: 3
