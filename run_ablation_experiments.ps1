@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# T5 新闻摘要生成 - 消融实验批量执行脚本
+# T5 新闻摘要生成 - 消融实验批量执行脚本 (RTX 4090 适配版)
 # ============================================================================
 # 【使用说明】
 # 1. 确保已安装所有依赖：pip install transformers datasets torch rouge-score matplotlib
@@ -8,9 +8,9 @@
 # 4. 每个实验会生成独立的时间戳可视化文件夹
 #
 # 【配置说明】
-# - 训练集最大样本数：80
-# - 验证集最大样本数：20
-# - 训练轮数：5 epochs（可根据需要调整）
+# - 训练集最大样本数：30000
+# - 验证集最大样本数：1000
+# - 训练轮数：3 epochs
 # - 模型：google-t5/t5-small
 # ============================================================================
 
@@ -67,9 +67,9 @@ Write-ColorOutput ""
 
 # 基础配置
 $BASE_DIR = "t5-news-checkpoint"
-$MAX_TRAIN = 80
-$MAX_VAL = 20
-$EPOCHS = 5
+$MAX_TRAIN = 30000
+$MAX_VAL = 1000
+$EPOCHS = 3
 
 Write-ColorOutput "配置: 训练集=$MAX_TRAIN, 验证集=$MAX_VAL, Epochs=$EPOCHS" -Color Yellow
 Write-ColorOutput ""
@@ -83,14 +83,14 @@ if (!(Test-Path $BASE_DIR)) {
 # 实验 1: 基准实验 (Baseline)
 # ============================================================================
 Write-ColorOutput "[1/10] 基准实验 (Baseline)..." -Color Cyan
-Write-ColorOutput "      配置: lr=0.0003, batch_size=4, grad_accum=2" -Color Gray
+Write-ColorOutput "      配置: lr=0.0003, batch_size=32, grad_accum=2" -Color Gray
 
 python train.py `
     --max_train_samples $MAX_TRAIN `
     --max_val_samples $MAX_VAL `
     --epochs $EPOCHS `
     --lr 0.0003 `
-    --batch_size 4 `
+    --batch_size 32 `
     --grad_accum 2 `
     --output_dir "$BASE_DIR/baseline"
 
@@ -106,7 +106,7 @@ python train.py `
     --max_val_samples $MAX_VAL `
     --epochs $EPOCHS `
     --lr 0.0001 `
-    --batch_size 4 `
+    --batch_size 32 `
     --grad_accum 2 `
     --output_dir "$BASE_DIR/exp_lr_1e4"
 
@@ -122,7 +122,7 @@ python train.py `
     --max_val_samples $MAX_VAL `
     --epochs $EPOCHS `
     --lr 0.001 `
-    --batch_size 4 `
+    --batch_size 32 `
     --grad_accum 2 `
     --output_dir "$BASE_DIR/exp_lr_1e3"
 
@@ -131,23 +131,7 @@ Write-ColorOutput ""
 # ============================================================================
 # 实验 4: Batch Size 影响 - 小 Batch
 # ============================================================================
-Write-ColorOutput "[4/10] Batch Size 实验 - 小Batch (bs=2, ga=4)..." -Color Cyan
-
-python train.py `
-    --max_train_samples $MAX_TRAIN `
-    --max_val_samples $MAX_VAL `
-    --epochs $EPOCHS `
-    --lr 0.0003 `
-    --batch_size 2 `
-    --grad_accum 4 `
-    --output_dir "$BASE_DIR/exp_bs2_ga4"
-
-Write-ColorOutput ""
-
-# ============================================================================
-# 实验 5: Batch Size 影响 - 大 Batch
-# ============================================================================
-Write-ColorOutput "[5/10] Batch Size 实验 - 大Batch (bs=8, ga=1)..." -Color Cyan
+Write-ColorOutput "[4/10] Batch Size 实验 - 小Batch (bs=8, ga=8)..." -Color Cyan
 
 python train.py `
     --max_train_samples $MAX_TRAIN `
@@ -155,8 +139,24 @@ python train.py `
     --epochs $EPOCHS `
     --lr 0.0003 `
     --batch_size 8 `
+    --grad_accum 8 `
+    --output_dir "$BASE_DIR/exp_bs8_ga8"
+
+Write-ColorOutput ""
+
+# ============================================================================
+# 实验 5: Batch Size 影响 - 大 Batch
+# ============================================================================
+Write-ColorOutput "[5/10] Batch Size 实验 - 大Batch (bs=64, ga=1)..." -Color Cyan
+
+python train.py `
+    --max_train_samples $MAX_TRAIN `
+    --max_val_samples $MAX_VAL `
+    --epochs $EPOCHS `
+    --lr 0.0003 `
+    --batch_size 64 `
     --grad_accum 1 `
-    --output_dir "$BASE_DIR/exp_bs8_ga1"
+    --output_dir "$BASE_DIR/exp_bs64_ga1"
 
 Write-ColorOutput ""
 
@@ -170,7 +170,7 @@ python train.py `
     --max_val_samples $MAX_VAL `
     --epochs $EPOCHS `
     --lr 0.0003 `
-    --batch_size 4 `
+    --batch_size 32 `
     --grad_accum 2 `
     --max_source_len 256 `
     --max_target_len 30 `
@@ -188,8 +188,8 @@ python train.py `
     --max_val_samples $MAX_VAL `
     --epochs $EPOCHS `
     --lr 0.0003 `
-    --batch_size 4 `
-    --grad_accum 2 `
+    --batch_size 16 `
+    --grad_accum 4 `
     --max_source_len 768 `
     --max_target_len 50 `
     --output_dir "$BASE_DIR/exp_len_long"
@@ -206,7 +206,7 @@ python train.py `
     --max_val_samples $MAX_VAL `
     --epochs $EPOCHS `
     --lr 0.0003 `
-    --batch_size 8 `
+    --batch_size 64 `
     --grad_accum 1 `
     --output_dir "$BASE_DIR/exp_no_accum"
 
@@ -215,32 +215,32 @@ Write-ColorOutput ""
 # ============================================================================
 # 实验 9: 数据量影响 - 少量数据
 # ============================================================================
-Write-ColorOutput "[9/10] 数据量实验 - 少量数据 (40 samples)..." -Color Cyan
+Write-ColorOutput "[9/10] 数据量实验 - 少量数据 (2000 samples)..." -Color Cyan
 
 python train.py `
-    --max_train_samples 40 `
-    --max_val_samples 10 `
+    --max_train_samples 2000 `
+    --max_val_samples 200 `
     --epochs $EPOCHS `
     --lr 0.0003 `
-    --batch_size 4 `
+    --batch_size 32 `
     --grad_accum 2 `
-    --output_dir "$BASE_DIR/exp_data_40"
+    --output_dir "$BASE_DIR/exp_data_2000"
 
 Write-ColorOutput ""
 
 # ============================================================================
 # 实验 10: 数据量影响 - 中等数据
 # ============================================================================
-Write-ColorOutput "[10/10] 数据量实验 - 中等数据 (120 samples)..." -Color Cyan
+Write-ColorOutput "[10/10] 数据量实验 - 中等数据 (10000 samples)..." -Color Cyan
 
 python train.py `
-    --max_train_samples 120 `
-    --max_val_samples 30 `
+    --max_train_samples 10000 `
+    --max_val_samples 500 `
     --epochs $EPOCHS `
     --lr 0.0003 `
-    --batch_size 4 `
+    --batch_size 32 `
     --grad_accum 2 `
-    --output_dir "$BASE_DIR/exp_data_120"
+    --output_dir "$BASE_DIR/exp_data_10000"
 
 Write-ColorOutput ""
 
@@ -254,16 +254,16 @@ Write-ColorOutput ""
 Write-ColorOutput "实验结果保存在: $BASE_DIR/" -Color Yellow
 Write-ColorOutput ""
 Write-ColorOutput "实验列表:" -Color Cyan
-Write-ColorOutput "  1. baseline/           - 基准配置 (lr=0.0003, bs=4, ga=2)" -Color White
+Write-ColorOutput "  1. baseline/           - 基准配置 (lr=0.0003, bs=32, ga=2)" -Color White
 Write-ColorOutput "  2. exp_lr_1e4/         - 低学习率 (lr=0.0001)" -Color White
 Write-ColorOutput "  3. exp_lr_1e3/         - 高学习率 (lr=0.001)" -Color White
-Write-ColorOutput "  4. exp_bs2_ga4/        - 小Batch (bs=2, ga=4)" -Color White
-Write-ColorOutput "  5. exp_bs8_ga1/        - 大Batch (bs=8, ga=1)" -Color White
+Write-ColorOutput "  4. exp_bs8_ga8/        - 小Batch (bs=8, ga=8)" -Color White
+Write-ColorOutput "  5. exp_bs64_ga1/       - 大Batch (bs=64, ga=1)" -Color White
 Write-ColorOutput "  6. exp_len_short/      - 短序列 (256/30)" -Color White
 Write-ColorOutput "  7. exp_len_long/       - 长序列 (768/50)" -Color White
 Write-ColorOutput "  8. exp_no_accum/       - 无梯度累积 (ga=1)" -Color White
-Write-ColorOutput "  9. exp_data_40/        - 少量数据 (40 samples)" -Color White
-Write-ColorOutput " 10. exp_data_120/       - 中等数据 (120 samples)" -Color White
+Write-ColorOutput "  9. exp_data_2000/      - 少量数据 (2000 samples)" -Color White
+Write-ColorOutput " 10. exp_data_10000/     - 中等数据 (10000 samples)" -Color White
 Write-ColorOutput ""
 Write-ColorOutput "提示:" -Color Yellow
 Write-ColorOutput "  - 每个实验目录下都有 visualization_时间戳/ 文件夹包含可视化图表" -Color Gray

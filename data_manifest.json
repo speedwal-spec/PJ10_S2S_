@@ -1,7 +1,7 @@
 {
   "dataset_name": "cnn_dailymail",
   "dataset_config": "3.0.0",
-  "cache_dir": "E:\\develop\\PJ\\PJ10_S2S_\\data_cache",
+  "cache_dir": "E:\\PJ10_S2S\\data_cache",
   "text_column": "article",
   "summary_column": "highlights",
   "splits": {
