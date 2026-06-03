@@ -6,8 +6,8 @@ import gradio as gr
 import os
 import json
 from typing import Tuple
-from core.model_manager import ModelManager
-from configs.config_manager import load_full_config
+from src.core.model_manager import ModelManager
+from src.configs.config_manager import load_full_config
 
 
 # ==========================================

@@ -3,8 +3,8 @@
 # 不同电脑可能需要修改这里（模型期望路径、镜像等）
 
 paths:
-  # 训练输出路径
-  output_dir: "t5-news-checkpoint"
+  # 训练输出路径（统一使用 checkpoints_ablation）
+  output_dir: "checkpoints_ablation"
   
   # 消融实验统一输出路径
   ablation_base: "checkpoints_ablation"

@@ -91,34 +91,23 @@ pip install -r requirements.txt
 ### 运行基准实验
 
 ```bash
-# 准备数据
-python prepare_data.py
+# 1. 准备数据
+python scripts/prepare_data.py
 
-# 直接运行训练（使用命令行参数）
-python train.py --max_train_samples 80 --max_val_samples 20 --epochs 5 --exp_id baseline_run
+# 2. 训练模型（使用 YAML 配置）
+python scripts/train.py --config src/configs/ablation/baseline.yaml
 
-# 或使用 YAML 配置文件
-python train.py --config configs/ablation/baseline.yaml
-```
+# 3. ROUGE 评测
+python scripts/evaluate.py --ckpt checkpoints_ablation/baseline --output_json results_baseline.json
 
-### 运行完整消融实验（自动流水线）
-
-```bash
-# 一键执行全部消融实验（自动加载 configs/ablation/ 目录下的配置）
-python run_pipeline.py
-```
-
-### 启动 A/B 对比界面
-
-```bash
-# 启动 Gradio Web 界面（默认 http://127.0.0.1:7860）
-python -c "from ui.gradio_app import launch; launch()"
+# 4. 启动 Web 演示
+python scripts/demo.py --port 7860
 ```
 
 **注意**: 
 - 首次运行会自动下载数据集和模型权重
 - 建议设置 `HF_ENDPOINT` 环境变量加速下载
-- 单次训练后自动在输出目录生成可视化图表（training_curve.png, rouge_comparison.png 等）
+- 训练后自动在输出目录生成可视化图表
 
 ---
 
@@ -186,106 +175,103 @@ python -c "from ui.gradio_app import launch; launch()"
 
 ```
 PJ10_S2S_/
-├── train.py                     # 核心训练脚本（已补全 _map_fn + run_s2s_training）
-├── evaluate_rouge.py            # 统一 ROUGE 评测
-├── predict.py                   # 交互推理
-├── prepare_data.py              # 数据准备
-├── run_pipeline.py              # ★ 自动化消融流水线
-├── requirements.txt
+├── scripts/                     # ★ 评测要求的入口脚本
+│   ├── prepare_data.py          #   数据准备（下载数据集）
+│   ├── train.py                 #   训练脚本（生成 checkpoint）
+│   ├── evaluate.py              #   ROUGE 评测脚本
+│   └── demo.py                  #   Gradio Web 演示
+│
+├── src/                         # ★ 核心业务逻辑
+│   ├── __init__.py
+│   ├── configs/                 #   YAML 配置系统
+│   │   ├── config_manager.py    #     配置加载 & 继承解析
+│   │   ├── default.yaml         #     默认超参
+│   │   ├── paths.yaml           #     路径配置
+│   │   ├── hardware.yaml        #     硬件配置
+│   │   └── ablation/            #     消融实验配置
+│   ├── core/                    #   核心模块
+│   │   ├── model_manager.py     #     双槽位模型管理器
+│   │   └── visualization.py     #     训练内联可视化
+│   ├── api/                     #   RESTful API 框架
+│   │   └── service_framework.py #     微服务接口设计
+│   ├── distributed_core/        #   分布式调度引擎
+│   │   ├── cloud_dispatcher.py  #     星型联邦调度器
+│   │   └── message_queue.py     #     消息队列
+│   └── ui/                      #   Gradio 交互界面
+```
+
+### 💡 目录结构设计说明
+
+**为什么 `configs/` 在 `src/` 下？**
+
+我们选择了将配置文件放在 `src/configs/` 而非根目录，主要考虑：
+
+1. **模块化封装** - 配置作为源码包的一部分，便于打包分发
+2. **路径一致性** - 基于 `__file__` 计算路径，避免工作目录影响
+3. **项目规范** - 符合评测要求的 `scripts/` + `src/` 结构
+
+**对比传统方案**:
+- ✅ **传统**: `configs/` 在根目录（更易修改，但不易打包）
+- ✅ **当前**: `src/configs/` 在源码包内（易于分发，路径稳定）
+
+**两种方案都可行**，选择取决于项目需求。本项目选择后者是为了更好的模块化。
+
+详见: [PATH_MANAGEMENT_GUIDELINES.md](PATH_MANAGEMENT_GUIDELINES.md)
+│       └── gradio_app.py        #     A/B 对比竞技场
+│
+├── examples/                    # ★ 示例输出
+│   └── outputs.md               #   ROUGE 结果和生成样例
+│
+├── checkpoints_ablation/        # 消融实验输出（.gitignore）
+├── t5-news-checkpoint/          # 单次训练输出（.gitignore）
+├── data_cache/                  # 数据集缓存（.gitignore）
+├── runs/                        # TensorBoard 日志
+│
+├── backup_old_structure/        # 旧版文件备份（可安全删除）
+├── requirements.txt             # 依赖管理
 ├── data_manifest.json           # 数据集元数据
 ├── sample_articles_20.json      # 20 条测试样例
-│
-├── api/                         # ★ 微服务接口框架
-│   ├── __init__.py
-│   └── service_framework.py     #   RESTful API 架构定义 (Mock Mode)
-│
-├── distributed_core/            # ★ 分布式联邦调度框架
-│   ├── __init__.py
-│   ├── cloud_dispatcher.py      #   星型主控节点与异构 Worker 定义
-│   └── message_queue.py         #   异步任务队列与结果收集器
-│
-├── configs/                     # ★ YAML 配置系统
-│   ├── config_manager.py        #   配置加载 & 继承解析
-│   ├── default.yaml             #   默认超参
-│   ├── paths.yaml               #   路径配置
-│   ├── hardware.yaml            #   硬件配置
-│   └── ablation/                #   消融实验配置（继承链）
-│       ├── baseline.yaml
-│       ├── lr_0_001.yaml
-│       ├── bs_8.yaml
-│       └── samples_40.yaml
-│
-├── core/                        # ★ 核心模块
-│   ├── __init__.py
-│   ├── model_manager.py         #   双槽位模型管理器
-│   └── visualization.py         #   训练内联可视化
-│
-├── ui/                          # ★ Gradio 交互界面
-│   ├── __init__.py
-│   └── gradio_app.py            #   A/B 对比竞技场
-│
-├── t5-news-checkpoint/          # 单次训练输出（.gitignore）
-├── checkpoints_ablation/        # 消融实验输出（.gitignore）
-└── data_cache/                  # 数据集缓存（.gitignore）
+└── README.md                    # 项目文档
 ```
 
 ---
 
 ## 📖 使用指南
 
-### 1. 单次训练
+### 1. 数据准备
 
 ```bash
-# 步骤1: 准备数据
-python prepare_data.py
+python scripts/prepare_data.py
+```
 
-# 步骤2: 运行训练（使用 YAML 配置）
-python train.py --config configs/ablation/baseline.yaml
+### 2. 训练模型
+
+```bash
+# 使用 YAML 配置
+python scripts/train.py --config src/configs/ablation/baseline.yaml
 
 # 或直接传参（不依赖配置文件）
-python train.py --exp_id my_exp --max_train_samples 80 --max_val_samples 20 --lr 0.0003 --epochs 5
+python scripts/train.py --exp_id my_exp --max_train_samples 80 --max_val_samples 20 --lr 0.0003 --epochs 5
 ```
 
-### 2. 运行消融实验流水线
+### 3. ROUGE 评测
 
 ```bash
-# 自动扫描 configs/ablation/ 下所有 YAML 配置并依次执行
-python run_pipeline.py
+# 在验证集上评测（默认 1000 条子集，可复现）
+python scripts/evaluate.py --ckpt checkpoints_ablation/baseline --split validation --max_samples 1000 --seed 42
 ```
 
-### 3. 评测模型
+### 4. 启动 Web 演示
 
 ```bash
-# 在验证集上评测（默认 1000 条子集，可复现，切换其他ckpt路径可选择评测不同参数模型）
-python evaluate_rouge.py --ckpt t5-news-checkpoint/baseline --split validation --max_samples 1000 --seed 42 --num_beams 4 --max_new_tokens 40
+# 启动 Gradio Web UI (http://127.0.0.1:7860)
+python scripts/demo.py --port 7860
 ```
 
-### 4. 交互推理
-
-```bash
-# 交互模式：输入 1-20 选样例，或 t 自输入
-python predict.py --ckpt t5-news-checkpoint/my_exp
-```
-
-### 5. 启动 Gradio A/B 对比界面
-
-```bash
-# 启动 Web UI
-python -c "from ui.gradio_app import launch; launch()"
-```
-
-### 6. 查看 TensorBoard
+### 5. 查看 TensorBoard
 
 ```bash
 tensorboard --logdir=runs
-```
-
-### 7. 切换其他模型
-```bash
-# 修改configs/default.yaml中的model_name
-python train.py --config configs/ablation/baseline.yaml
-# 或直接传参
-python train.py --model_name "google-t5/t5-base
 ```
 ---
 

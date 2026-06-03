@@ -15,7 +15,7 @@ import os
 from datasets import load_dataset
 
 # 可选：国内镜像，便于在部分网络环境下加速访问 Hugging Face
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 
 def get_text_summary_columns(dataset_name: str):

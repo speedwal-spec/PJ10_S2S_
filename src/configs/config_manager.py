@@ -78,7 +78,7 @@ class VisualizationConfig:
 
 @dataclass
 class PathConfig:
-    output_dir: str = "t5-news-checkpoint"
+    output_dir: str = "checkpoints_ablation"  # ✅ 统一使用 checkpoints_ablation
     ablation_base: str = "checkpoints_ablation"
     cache_dir: str = "data_cache"
     samples_file: str = "sample_articles_20.json"
@@ -146,11 +146,35 @@ def load_config(yaml_path: str) -> ExperimentConfig:
     从YAML文件加载配置
 
     用法：
-        config = load_config("configs/ablation/baseline.yaml")
+        config = load_config("src/configs/ablation/baseline.yaml")
         print(config.training.lr)      # 0.0003
         print(config.data.prefix)      # "summarize: "
+    
+    注意：支持绝对路径和相对路径。相对路径会基于项目根目录（scripts/的父目录）解析。
     """
-    yaml_path = os.path.normpath(yaml_path)
+    # 如果是相对路径，尝试基于项目根目录解析
+    if not os.path.isabs(yaml_path):
+        # 策略1：先检查当前工作目录
+        if os.path.isfile(yaml_path):
+            yaml_path = os.path.normpath(yaml_path)
+        else:
+            # 策略2：尝试基于项目根目录（假设从 scripts/ 或根目录运行）
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(script_dir))
+            candidate = os.path.join(project_root, yaml_path)
+            if os.path.isfile(candidate):
+                yaml_path = os.path.normpath(candidate)
+            else:
+                # 策略3：保持原样，但给出更清晰的错误提示
+                yaml_path = os.path.normpath(yaml_path)
+                if not os.path.isfile(yaml_path):
+                    raise FileNotFoundError(
+                        f"配置文件不存在: {yaml_path}\n"
+                        f"当前工作目录: {os.getcwd()}\n"
+                        f"项目根目录: {project_root}\n"
+                        f"建议：使用完整路径，如 'src/configs/xxx.yaml'"
+                    )
+    
     base_dir = os.path.dirname(yaml_path)
 
     with open(yaml_path, "r", encoding="utf-8") as f:
@@ -198,9 +222,9 @@ def load_config(yaml_path: str) -> ExperimentConfig:
 
 
 def load_full_config(
-    default_path: str = "configs/default.yaml",
-    paths_path: str = "configs/paths.yaml",
-    hardware_path: str = "configs/hardware.yaml",
+    default_path: str = "src/configs/default.yaml",
+    paths_path: str = "src/configs/paths.yaml",
+    hardware_path: str = "src/configs/hardware.yaml",
 ) -> ExperimentConfig:
     """
     加载完整配置：default.yaml + paths.yaml + hardware.yaml 自动合并。

@@ -9,7 +9,7 @@ import json
 import re
 import gc
 from typing import Dict, Optional, Tuple
-from configs.config_manager import ExperimentConfig
+from src.configs.config_manager import ExperimentConfig
 
 
 class ModelManager:
@@ -23,16 +23,28 @@ class ModelManager:
     - 防止双倍峰值OOM
     """
     
-    def __init__(self, ablation_dir="checkpoints_ablation", legacy_dir="t5-news-checkpoint",
+    def __init__(self, ablation_dir: Optional[str] = None, legacy_dir: Optional[str] = None,
                  config: Optional[ExperimentConfig] = None):
         """
         初始化模型管理器
         
         Args:
-            ablation_dir: 消融实验模型目录
-            legacy_dir: 传统模型目录
-            config: 实验配置（可选），用于推理默认值
+            ablation_dir: 消融实验模型目录（优先，默认读配置）
+            legacy_dir: 传统模型目录（优先，默认读配置）
+            config: 实验配置（可选），用于路径和推理默认值
         """
+        # ✅ 获取项目根目录
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(script_dir))
+        
+        # 从配置读取路径（命令行参数可覆盖）
+        if config is not None:
+            ablation_dir = ablation_dir or config.paths.ablation_base
+            legacy_dir = legacy_dir or config.paths.output_dir
+        else:
+            # ✅ 使用基于项目根目录的绝对路径
+            ablation_dir = ablation_dir or os.path.join(project_root, "checkpoints_ablation")
+            legacy_dir = legacy_dir or os.path.join(project_root, "t5-news-checkpoint")
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() 
             else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu")
@@ -203,7 +215,7 @@ class ModelManager:
         从 configs/default.yaml 读取默认超参（作为兜底）
         """
         try:
-            from configs.config_manager import load_full_config
+            from src.configs.config_manager import load_full_config
             _cfg = load_full_config()
             return {
                 'lr': _cfg.training.lr,
