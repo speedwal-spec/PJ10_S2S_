@@ -250,6 +250,10 @@ def run_s2s_training(
             best_val_loss = avg_val_loss
             patience_counter = 0
             print(f"📉 Val Loss 创新低 ({best_val_loss:.4f})，正在封存当前最优权重...")
+            # BART 需要 forced_bos_token_id=0，否则推理时解码退化
+            if model.config.model_type == "bart" and model.config.forced_bos_token_id is None:
+                model.config.forced_bos_token_id = 0
+                model.generation_config.forced_bos_token_id = 0
             model.save_pretrained(final_out_dir)
             tokenizer.save_pretrained(final_out_dir)
         else:
@@ -322,6 +326,10 @@ def main() -> None:
     p.add_argument("--max_grad_norm", type=float, default=1.0, help="梯度裁剪阈值")
     p.add_argument("--weight_decay", type=float, default=0.01, help="AdamW 权重衰减")
     p.add_argument("--no_rouge_eval", action="store_true", help="跳过 ROUGE 评测")
+    p.add_argument("--with_bertscore", action="store_true",
+                   help="在快速评测中启用 BERTScore 语义相似度（需 pip install bert-score）")
+    p.add_argument("--skip_training", action="store_true",
+                   help="跳过训练，仅下载并保存预训练模型权重")
     args = p.parse_args()
 
     # 如果指定了 --config，从YAML加载并合并
@@ -329,8 +337,15 @@ def main() -> None:
         config = load_config(args.config)
         config = merge_with_cli(config, args)
         
-        # 将配置值同步回 args
-        args.exp_id = config.id
+        # 设置 HuggingFace 镜像（从配置读取 paths.yaml 中的 hf_endpoint）
+        hf_endpoint = config.environment.hf_endpoint
+        if hf_endpoint and not os.environ.get("HF_ENDPOINT"):
+            os.environ["HF_ENDPOINT"] = hf_endpoint
+            print(f"🌐 设置 HF_ENDPOINT={hf_endpoint}")
+        
+        # 将配置值同步回 args（仅当 CLI 未显式指定时覆盖）
+        if '--exp-id' not in ' '.join(sys.argv) and '--exp_id' not in ' '.join(sys.argv):
+            args.exp_id = config.id
         args.lr = config.training.lr
         args.batch_size = config.training.batch_size
         args.grad_accum = config.training.grad_accum
@@ -375,9 +390,31 @@ def main() -> None:
     print(f"子集: train={n_tr}, val={n_val}", flush=True)
 
     print("正在加载 T5 分词器与预训练权重…", flush=True)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
+    # PEGASUS 使用 SentencePiece，fast tokenizer 转换在 transformers 当前版本有 bug
+    if "pegasus" in args.model_name.lower():
+        from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
+        tokenizer = PegasusTokenizer.from_pretrained(args.model_name)
+    else:
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
+        except Exception:
+            print("⚠️ 快速分词器加载失败，回退到慢速分词器", file=sys.stderr)
+            tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False)
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
     print("模型已就绪，开始 tokenize…", flush=True)
+
+    # ── 跳过训练模式：直接保存预训练权重 ──
+    if getattr(args, 'skip_training', False):
+        final_out_dir = os.path.join(args.output_dir, args.exp_id)
+        os.makedirs(final_out_dir, exist_ok=True)
+        # BART 需要 forced_bos_token_id
+        if model.config.model_type == "bart" and model.config.forced_bos_token_id is None:
+            model.config.forced_bos_token_id = 0
+        model.save_pretrained(final_out_dir)
+        tokenizer.save_pretrained(final_out_dir)
+        save_hparams_json(final_out_dir, args.exp_id, args)
+        print(f"⏩ 跳过训练，预训练权重已保存至: {os.path.abspath(final_out_dir)}")
+        return
 
     preprocess = build_preprocess_fn(
         text_col, summary_col, tokenizer, args.prefix, args.max_source_len, args.max_target_len

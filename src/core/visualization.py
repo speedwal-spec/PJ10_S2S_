@@ -19,23 +19,10 @@ except ImportError:
 
 
 def try_compute_rouge(preds: List[str], refs: List[str]) -> Optional[Dict[str, float]]:
-    """计算 ROUGE-1/2/L 均值（便捷内联函数，正式评测请用 evaluate_rouge.py）"""
-    try:
-        from rouge_score import rouge_scorer
-    except ImportError:
-        return None
-    s = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
-    r1, r2, rl = [], [], []
-    for p, g in zip(preds, refs):
-        sc = s.score(g, p)
-        r1.append(sc["rouge1"].fmeasure)
-        r2.append(sc["rouge2"].fmeasure)
-        rl.append(sc["rougeL"].fmeasure)
-    return {
-        "rouge1": float(np.mean(r1)) if r1 else 0.0,
-        "rouge2": float(np.mean(r2)) if r2 else 0.0,
-        "rougeL": float(np.mean(rl)) if rl else 0.0,
-    }
+    """计算 ROUGE-1/2/L 均值（委托至 metrics 模块，保持向后兼容）"""
+    from src.core.metrics import compute_rouge
+    result = compute_rouge(preds, refs)
+    return result if result and "rouge1" in result else None
 
 
 def save_training_plot(

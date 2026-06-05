@@ -22,7 +22,7 @@ def quick_rouge_eval(
     n_val: int,
 ) -> Tuple[Optional[Dict[str, float]], List[str], List[str]]:
     """
-    训练结束后在验证集子集上做快速 ROUGE 评测
+    训练结束后在验证集子集上做快速评测（ROUGE + 可选 BERTScore）
     
     Args:
         model: 训练好的模型（会重新从 checkpoint 加载）
@@ -34,11 +34,11 @@ def quick_rouge_eval(
         n_val: 验证集样本数
         
     Returns:
-        (ROUGE分数, 预测列表, 参考列表)
+        (指标分数, 预测列表, 参考列表)
     """
-    from src.core.visualization import try_compute_rouge
+    from src.core.metrics import compute_all_metrics
     
-    print("📥 正在重新加载表现最好的模型权重，以进行 ROUGE 快评...", flush=True)
+    print("📥 正在重新加载表现最好的模型权重，以进行快速评测...", flush=True)
     
     # ✅ 计算项目根目录（从 src/core/ 往上两层）
     script_dir = os.path.dirname(os.path.abspath(__file__))  # src/core/
@@ -102,11 +102,19 @@ def quick_rouge_eval(
     preds = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
     n_show = min(len(preds), len(ref_texts))
     
-    r = try_compute_rouge(preds[:n_show], ref_texts[:n_show])
-    if r:
-        print("验证子集 ROUGE (约前 128 条):", {k: round(v, 4) for k, v in r.items()}, flush=True)
+    # 使用统一评测接口（始终启用 ROUGE，训练时 BERTScore 默认关闭）
+    enable_bertscore = getattr(args, "with_bertscore", False)
+    metrics = compute_all_metrics(
+        preds[:n_show], ref_texts[:n_show],
+        enable_rouge=True,
+        enable_bertscore=enable_bertscore,
+        enable_llm_judge=False,  # 训练快评不启用 LLM
+    )
+    
+    if metrics:
+        print("验证子集评测结果:", {k: round(v, 4) for k, v in metrics.items() if isinstance(v, float)}, flush=True)
     else:
-        print("未安装 rouge_score，跳过 ROUGE。可: pip install rouge-score", file=sys.stderr)
+        print("未安装 rouge_score，跳过评测。可: pip install rouge-score", file=sys.stderr)
     
     for k in range(min(2, n_show)):
         print(
@@ -114,7 +122,7 @@ def quick_rouge_eval(
             flush=True,
         )
     
-    return r, preds, ref_texts
+    return metrics, preds, ref_texts
 
 
 def generate_report_visuals(

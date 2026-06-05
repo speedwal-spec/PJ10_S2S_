@@ -39,6 +39,7 @@ class TrainingConfig:
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
     label_pad_token_id: int = -100
+    skip_training: bool = False  # 跳过训练，直接保存预训练权重
 
 
 @dataclass
@@ -119,8 +120,19 @@ class ExperimentConfig:
 # 2. YAML加载器（支持继承）
 # ==========================================
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """递归深合并两个字典，子字典不会互相替换"""
+    result = base.copy()
+    for key, val in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val
+    return result
+
+
 def _resolve_extends(raw: dict, base_dir: str) -> dict:
-    """处理 extends 关键字，递归合并配置"""
+    """处理 extends 关键字，递归合并配置（深合并）"""
     extends = raw.pop("extends", None)
     if extends is None:
         return raw
@@ -136,8 +148,8 @@ def _resolve_extends(raw: dict, base_dir: str) -> dict:
     parent_dir = os.path.dirname(parent_path)
     parent_raw = _resolve_extends(parent_raw, parent_dir)
 
-    # 合并（子配置覆盖父配置）
-    merged = {**parent_raw, **raw}
+    # 深合并（子配置覆盖父配置，但子字典不会整体替换）
+    merged = _deep_merge(parent_raw, raw)
     return merged
 
 

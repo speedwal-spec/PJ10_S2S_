@@ -116,11 +116,18 @@ def main() -> None:
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--max_new_tokens", type=int, default=40)
     parser.add_argument("--num_beams", type=int, default=4)
-    parser.add_argument("--length_penalty", type=float, default=0.85)
-    parser.add_argument("--no_repeat_ngram", type=int, default=2)
+    parser.add_argument("--length_penalty", type=float, default=None,
+                       help="长度惩罚，默认使用模型的 generation_config")
+    parser.add_argument("--no_repeat_ngram", type=int, default=None,
+                       help="禁止重复 n-gram，默认使用模型的 generation_config")
     parser.add_argument("--output_json", type=str, default="",
                        help="输出 JSON 路径，空则只打印")
     parser.add_argument("--seed", type=int, default=42)
+    # 额外评测指标
+    parser.add_argument("--with_bertscore", action="store_true",
+                       help="启用 BERTScore 语义相似度评测（需 pip install bert-score）")
+    parser.add_argument("--with_llm_judge", action="store_true",
+                       help="启用 LLM 多维评分（需设置 LLM_API_KEY / LLM_API_BASE 环境变量）")
     args = parser.parse_args()
 
     try:
@@ -159,7 +166,23 @@ def main() -> None:
     device = get_device()
     print(f"设备: {device} | 评测样本数: {n_take}", flush=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(ck, use_fast=True)
+    # PEGASUS 使用 SentencePiece，fast tokenizer 转换在 transformers 当前版本有 bug
+    ck_config = os.path.join(ck, "config.json")
+    is_pegasus = False
+    if os.path.isfile(ck_config):
+        with open(ck_config, "r", encoding="utf-8") as f:
+            import json
+            model_cfg = json.load(f)
+            is_pegasus = model_cfg.get("model_type", "") == "pegasus"
+    if is_pegasus:
+        from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
+        tokenizer = PegasusTokenizer.from_pretrained(ck)
+    else:
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(ck, use_fast=True)
+        except Exception:
+            print("⚠️ 快速分词器加载失败，回退到慢速分词器", file=sys.stderr)
+            tokenizer = AutoTokenizer.from_pretrained(ck, use_fast=False)
     model = AutoModelForSeq2SeqLM.from_pretrained(ck)
     model.to(device)
     model.eval()
@@ -194,8 +217,8 @@ def main() -> None:
                 **enc,
                 max_new_tokens=args.max_new_tokens,
                 num_beams=args.num_beams,
-                length_penalty=args.length_penalty,
-                no_repeat_ngram_size=args.no_repeat_ngram,
+                length_penalty=args.length_penalty if args.length_penalty is not None else model.generation_config.length_penalty,
+                no_repeat_ngram_size=args.no_repeat_ngram if args.no_repeat_ngram is not None else model.generation_config.no_repeat_ngram_size,
                 early_stopping=True,
             )
             
@@ -216,6 +239,25 @@ def main() -> None:
     print(f"  评测样本数: {rouge_scores['n']}")
     print("="*60)
 
+    # 额外指标：BERTScore / LLM-as-a-Judge
+    extra_metrics = {}
+    if args.with_bertscore or args.with_llm_judge:
+        print("\n" + "="*60)
+        print("📊 额外指标评测")
+        print("="*60)
+        from src.core.metrics import compute_all_metrics
+        extra_metrics = compute_all_metrics(
+            preds, refs,
+            enable_rouge=False,
+            enable_bertscore=args.with_bertscore,
+            enable_llm_judge=args.with_llm_judge,
+        )
+        # 打印额外指标
+        for k, v in extra_metrics.items():
+            if isinstance(v, float):
+                print(f"  {k}: {v:.4f}")
+        print("="*60)
+
     # 输出示例
     print("\n📝 生成样例（前3条）:")
     for k in range(min(3, len(preds))):
@@ -226,15 +268,23 @@ def main() -> None:
     # 写入 JSON（保留原有功能）
     if args.output_json:
         out_path = args.output_json if os.path.isabs(args.output_json) else _abs(args.output_json)
+        output_data = {
+            "exp_id": os.path.basename(args.ckpt),
+            "split": args.split,
+            "n_samples": rouge_scores["n"],
+            "rouge1": round(rouge_scores["rouge1"], 4),
+            "rouge2": round(rouge_scores["rouge2"], 4),
+            "rougeL": round(rouge_scores["rougeL"], 4),
+        }
+        # 若启用了额外指标，追加到 JSON
+        if extra_metrics:
+            for k, v in extra_metrics.items():
+                if isinstance(v, float):
+                    output_data[k] = round(v, 4)
+                else:
+                    output_data[k] = v
         with open(out_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "exp_id": os.path.basename(args.ckpt),
-                "split": args.split,
-                "n_samples": rouge_scores["n"],
-                "rouge1": round(rouge_scores["rouge1"], 4),
-                "rouge2": round(rouge_scores["rouge2"], 4),
-                "rougeL": round(rouge_scores["rougeL"], 4),
-            }, f, ensure_ascii=False, indent=2)
+            json.dump(output_data, f, ensure_ascii=False, indent=2)
         print(f"\n✅ 结果已写入: {out_path}")
     
     # ✅ 自动生成完整报告（JSON + Markdown + 文本）
@@ -248,6 +298,7 @@ def main() -> None:
         split=args.split,
         ckpt_path=args.ckpt,
         project_root=project_root,
+        extra_metrics=extra_metrics if extra_metrics else None,
     )
     
     print("\n" + "="*60)

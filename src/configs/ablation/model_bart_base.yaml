@@ -1,0 +1,16 @@
+# configs/ablation/model_bart_base.yaml
+# bart-large-cnn模型（微调于 CNN/Dailymail）
+extends: baseline.yaml
+
+experiment:
+  id: "model_bart_base"
+  description: "使用bart-large-cnn模型（微调于 CNN/Dailymail）"
+
+model:
+  name: "facebook/bart-large-cnn"   # BART-large 已微调于 CNN/Dailymail
+
+data:
+  prefix: ""   # BART 不使用 T5 式前缀
+
+training:
+  skip_training: true   # BART-large-cnn 已微调于 CNN/Dailymail，无需再训练
