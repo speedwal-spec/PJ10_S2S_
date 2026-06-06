@@ -82,9 +82,13 @@
 
 ---
 
-## 🚀 快速开始
+## 🚀 运行指南
 
-### 环境准备
+以下步骤从零开始，逐步完成环境配置、数据准备、训练和评测。
+
+---
+
+### 1. 环境准备
 
 ```bash
 # 克隆仓库
@@ -93,51 +97,252 @@ cd PJ10/PJ10_S2S_
 
 # 创建虚拟环境（推荐 Python 3.10+）
 python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # Linux/Mac
+
+# Windows 激活
+.venv\Scripts\activate
+# Linux/Mac 激活
+# source .venv/bin/activate
 
 # 安装依赖
 pip install -r requirements.txt
 ```
 
-### 运行全自动消融流水线（推荐）
+> **国内用户加速**:
+> ```bash
+> pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+> ```
+>
+> **HuggingFace 模型下载加速**:
+> ```bash
+> set HF_ENDPOINT=https://hf-mirror.com     # Windows
+> # export HF_ENDPOINT=https://hf-mirror.com # Linux/Mac
+> ```
+
+---
+
+### 2. 数据准备
 
 ```bash
-# 一键运行所有消融实验（训练 + 评测）
+python scripts/prepare_data.py
+```
+
+首次运行会自动从 HuggingFace 下载 **CNN/DailyMail 3.0.0** 数据集并缓存到 `data_cache/` 目录，同时生成以下文件：
+
+| 生成文件 | 位置 | 说明 |
+|---------|------|------|
+| `data_manifest.json` | 项目根目录 | 数据集元数据（包含缓存路径、列名、切分大小） |
+| `sample_articles_20.json` | 项目根目录 | 从测试集固定抽样 20 条，供快速试跑 |
+| `data_cache/cnn_dailymail/` | 项目根目录 | 数据集本地缓存（约 700MB） |
+
+**预期输出**:
+```
+正在下载数据集: cnn_dailymail -> ./data_cache
+...
+下载与元数据写入完成。
+  train=287113, validation=13368, test=11490
+  正文列: article, 摘要列: highlights
+  已保存: /path/to/PJ10_S2S_/data_manifest.json
+  测试样例: 20 条 -> /path/to/PJ10_S2S_/sample_articles_20.json
+```
+
+> **注意**: 若之前已下载过数据集，脚本会自动复用缓存，几秒内完成。
+
+---
+
+### 3. 全自动消融流水线（推荐）
+
+一键运行所有消融实验（扫描配置 → 训练/保存 → 评测 → 生成统计报告）：
+
+```bash
+# 基本运行（T5 微调 + 零样本评测）
 python run_pipeline.py
 
-# 启用 BERTScore 语义相似度评测
+# 启用 BERTScore 语义相似度（推荐）
 python run_pipeline.py --with_bertscore
 ```
 
-`run_pipeline.py` 会自动：
-1. 扫描 `src/configs/ablation/` 下所有 YAML 配置
-2. 对每个配置执行 训练 → 评测
-3. 汇总统计报告至 `results/ablation_statistical_report.md`
+#### 流水线工作流程
 
-### 手动运行单实验
+1. **扫描配置**: 读取 `src/configs/ablation/` 下所有 YAML 配置
+2. **遍历配置**: 对每个配置，按实验设计执行一次运行
+3. **训练或跳过**:
+   - T5-small (`baseline.yaml`) → 执行完整微调
+   - BART (`model_bart_base.yaml`) → 检测 `skip_training: true`，跳过训练，直接下载预训练权重并保存
+   - PEGASUS (`model_pegasus_cnn_dailymail.yaml`) → 同上
+4. **评测**: 自动调用 `evaluate.py` 计算 ROUGE-1/2/L 和 BERTScore
+5. **汇总报告**: 生成 `results/ablation_statistical_report.md`
 
-```bash
-# 1. 准备数据
-python scripts/prepare_data.py
+**预期输出**:
+```
+[1/2] 实验: model_bart_base (model_bart_base.yaml)
+    种子 42
+  ✅ [model_bart_base] seed=42: ROUGE-1=0.43xx, ROUGE-2=0.20xx, ROUGE-L=0.40xx
 
-# 2. 训练模型（T5-small 微调）
-python scripts/train.py --config src/configs/ablation/baseline.yaml
+[2/2] 实验: model_pegasus_cnn_dailymail (model_pegasus_cnn_dailymail.yaml)
+    种子 42
+  ✅ [model_pegasus_cnn_dailymail] seed=42: ROUGE-1=0.41xx, ROUGE-2=0.19xx, ROUGE-L=0.38xx
 
-# 3. 跳过训练直接保存预训练权重（BART / PEGASUS）
-python scripts/train.py --config src/configs/ablation/model_bart_base.yaml --skip_training
-
-# 4. ROUGE + BERTScore 评测
-python scripts/evaluate.py --ckpt checkpoints_ablation/model_bart_base_seed42 --with_bertscore --max_samples 8
+🎉 多种子消融流水线执行完毕！
+    总耗时: 15.32 分钟
+    成功率: 2/2
+    统计报告: E:/.../results/ablation_statistical_report.md
 ```
 
-**注意**: 
-- 首次运行会自动下载数据集和模型权重
-- 建议设置 `HF_ENDPOINT=https://hf-mirror.com` 加速下载（国内用户）
-- BART / PEGASUS 使用 `skip_training` 跳过微调，直接零样本评测
-- 训练后自动在输出目录生成可视化图表
+---
+
+### 4. 手动单步运行（进阶）
+
+如果只想运行特定模型或需要精细控制参数，可以分步执行。
+
+#### 4.1 T5-small 微调
+
+```bash
+python scripts/train.py --config src/configs/ablation/baseline.yaml
+```
+
+此命令会：
+1. 从配置文件读取超参数（lr=0.0003, bs=4, ga=2, epochs=5）
+2. 从 `data_manifest.json` 加载数据集
+3. 用训练集 2000 条样本、验证集 400 条执行 5 轮微调
+4. 输出到 `checkpoints_ablation/baseline/`
+5. 自动生成 Loss 曲线、ROUGE 柱状图等可视化图表
+
+**关键参数说明**:
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--config` | (无) | 配置文件路径，推荐使用 YAML 管理参数 |
+| `--exp_id` | `debug_run` | 实验标识，决定输出目录名 |
+| `--max_train_samples` | 2000 | 训练样本数（设为 0 使用全量） |
+| `--max_val_samples` | 400 | 验证样本数 |
+| `--epochs` | 5 | 训练轮数 |
+| `--lr` | 0.0003 | 学习率 |
+| `--batch_size` | 4 | 批次大小 |
+| `--grad_accum` | 2 | 梯度累积步数 |
+| `--no_rouge_eval` | (关闭) | 跳过训练中的快速 ROUGE 评测 |
+| `--skip_training` | (关闭) | 跳过训练，仅保存预训练权重 |
+
+#### 4.2 BART/PEGASUS 零样本（跳过训练）
+
+对于已在 CNN/Dailymail 上微调过的模型，直接保存预训练权重，无需训练：
+
+```bash
+# BART-large-cnn
+python scripts/train.py --config src/configs/ablation/model_bart_base.yaml --skip_training
+
+# PEGASUS-cnn_dailymail
+python scripts/train.py --config src/configs/ablation/model_pegasus_cnn_dailymail.yaml --skip_training
+```
+
+执行后，预训练权重会保存到 `checkpoints_ablation/model_bart_base_seed42/` 或对应 ID 的目录，供下一步评测使用。
+
+#### 4.3 不依赖配置文件直接运行
+
+```bash
+python scripts/train.py \
+    --exp_id my_custom_exp \
+    --model_name google-t5/t5-small \
+    --lr 0.001 \
+    --batch_size 8 \
+    --epochs 3 \
+    --max_train_samples 80 \
+    --max_val_samples 20 \
+    --no_rouge_eval
+```
+
+> **注意**: 通过 `--config` 加载 YAML 后，命令行参数会自动覆盖配置文件中的值。
 
 ---
+
+### 5. 评测模型
+
+对已保存的 checkpoint 计算 ROUGE-1/2/L 和 BERTScore：
+
+```bash
+# 基本 ROUGE 评测
+python scripts/evaluate.py --ckpt checkpoints_ablation/baseline
+
+# 完整评测（ROUGE + BERTScore），指定评测条数
+python scripts/evaluate.py \
+    --ckpt checkpoints_ablation/model_bart_base_seed42 \
+    --split validation \
+    --max_samples 1000 \
+    --seed 42 \
+    --with_bertscore
+```
+
+**主要参数**:
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--ckpt` | `checkpoints_ablation/baseline` | checkpoint 目录（包含 config.json） |
+| `--manifest` | `data_manifest.json` | 数据集清单（默认从项目根目录读取） |
+| `--split` | `validation` | 评测集，可选 `validation` / `test` |
+| `--max_samples` | 1000 | 评测条数（0=全量） |
+| `--batch_size` | 4 | 生成批次大小 |
+| `--with_bertscore` | (关闭) | 启用 BERTScore 语义相似度 |
+| `--with_llm_judge` | (关闭) | 启用 LLM 多维评分（需配置 API 密钥） |
+
+**预期输出**:
+```
+📊 ROUGE 评测结果
+============================================================
+  ROUGE-1: 0.4321
+  ROUGE-2: 0.2015
+  ROUGE-L: 0.4018
+  评测样本数: 1000
+============================================================
+
+📊 额外指标评测
+============================================================
+  BERTScore F1: 0.8654
+============================================================
+```
+
+评测完成后，会自动在项目根目录生成三种报告格式：
+
+| 报告文件 | 格式 | 说明 |
+|---------|------|------|
+| `results/{exp_id}_n{n}_rouge.json` | JSON | 结构化结果，可供程序读取 |
+| `examples/{exp_id}_examples.md` | Markdown | 生成样例展示（符合评测要求） |
+| `results/{exp_id}_n{n}_report.txt` | 文本 | 完整评测报告 |
+
+---
+
+### 6. 查看训练曲线
+
+```bash
+tensorboard --logdir=runs
+```
+
+打开浏览器访问 `http://localhost:6006`，可实时查看 Loss 下降曲线和验证集指标。
+
+> 每个实验的训练日志位于 `runs/{exp_id}/` 目录下。
+
+---
+
+### 7. 启动 Web 演示（可选）
+
+```bash
+# 启动 Gradio Web UI
+python scripts/demo.py
+
+# 自定义端口 + 创建公开分享链接
+python scripts/demo.py --port 8080 --share
+```
+
+访问 `http://127.0.0.1:7860`（默认）查看 A/B 对比竞技场，可加载不同 checkpoint 对比生成效果。
+
+---
+
+### 8. 配置管理与校验
+
+```bash
+# 查看当前完整配置（含硬件自动检测）
+python -c "from src.configs.config_manager import load_full_config; c = load_full_config(); print(c)"
+
+# 查看单个 YAML 文件的解析结果
+python -c "from src.configs.config_manager import load_config; c = load_config('src/configs/ablation/baseline.yaml'); print(f'lr={c.training.lr}, bs={c.training.batch_size}')"`
 
 ## 🔬 实验设计
 
@@ -238,60 +443,6 @@ PJ10_S2S_/
 ├── data_cache/                  # 数据集缓存（.gitignore）
 │
 └── README.md                    # 项目文档
-```
-
----
-
-## 📖 使用指南
-
-### 1. 数据准备
-
-```bash
-python scripts/prepare_data.py
-```
-
-### 2. 全自动消融流水线
-
-```bash
-# 运行所有消融实验（推荐）
-python run_pipeline.py --with_bertscore
-```
-
-流水线会自动扫描 `src/configs/ablation/` 下所有 YAML 配置，对每个配置执行训练→评测，最终生成统计报告。
-
-对于配置了 `skip_training: true` 的模型（BART、PEGASUS），流水线会跳过微调步骤，直接下载预训练权重并评测。
-
-### 3. 单体训练
-
-```bash
-# T5-small 微调
-python scripts/train.py --config src/configs/ablation/baseline.yaml
-
-# 跳过训练，保存预训练权重（BART / PEGASUS）
-python scripts/train.py --config src/configs/ablation/model_bart_base.yaml --skip_training
-
-# 或直接传参
-python scripts/train.py --exp_id my_exp --model_name facebook/bart-large-cnn --max_train_samples 8 --no_rouge_eval --skip_training
-```
-
-### 4. ROUGE + BERTScore 评测
-
-```bash
-# 在验证集上评测
-python scripts/evaluate.py --ckpt checkpoints_ablation/model_bart_base_seed42 --split validation --max_samples 1000 --with_bertscore
-```
-
-### 5. 配置管理
-
-```bash
-# 查看当前硬件配置
-python -c "from src.configs.config_manager import load_full_config; c = load_full_config(); print(c.environment)"
-```
-
-### 6. 查看 TensorBoard
-
-```bash
-tensorboard --logdir=runs
 ```
 
 ---
