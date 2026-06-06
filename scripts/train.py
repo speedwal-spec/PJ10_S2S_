@@ -13,6 +13,7 @@ import os
 import sys
 import argparse
 import json
+from pathlib import Path
 import numpy as np
 import torch
 from typing import Any, Dict, List
@@ -50,6 +51,11 @@ from src.core.visualization import (
 from src.core.quick_eval import quick_rouge_eval, generate_report_visuals
 
 
+def _project_root() -> Path:
+    """返回项目根目录（scripts/ 的父目录）"""
+    return Path(__file__).resolve().parents[1]
+
+
 def _abs_here(*parts: str) -> str:
     """获取相对于脚本所在目录的绝对路径"""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), *parts)
@@ -57,8 +63,10 @@ def _abs_here(*parts: str) -> str:
 
 def load_manifest(path: str) -> Dict[str, Any]:
     """加载数据清单文件"""
-    p = path if os.path.isabs(path) else _abs_here("..", path)
-    if not os.path.isfile(p):
+    p = Path(path)
+    if not p.is_absolute():
+        p = _project_root() / path
+    if not p.is_file():
         raise FileNotFoundError(f"未找到 {p}，请先运行 prepare_data.py")
     with open(p, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -68,7 +76,14 @@ def _load_raw_dataset(manifest: Dict[str, Any]):
     """从本地缓存加载数据集"""
     name = (manifest.get("dataset_name") or "cnn_dailymail").strip()
     cache_dir = manifest.get("cache_dir")
-    if not cache_dir or not os.path.isdir(cache_dir):
+    if not cache_dir:
+        raise FileNotFoundError(
+            f"manifest 中 cache_dir 为空，请重新执行 prepare_data.py"
+        )
+    # 若 cache_dir 是相对路径，解析为项目根目录下的路径
+    if not os.path.isabs(cache_dir):
+        cache_dir = str(_project_root() / cache_dir)
+    if not os.path.isdir(cache_dir):
         raise FileNotFoundError(
             f"manifest 中 cache_dir 无效: {cache_dir!r}，请重新执行 prepare_data.py"
         )
@@ -305,7 +320,9 @@ def main() -> None:
     p.add_argument("--config", type=str, default=None,
                    help="配置文件路径，如 src/configs/ablation/baseline.yaml")
     p.add_argument("--exp_id", type=str, default="debug_run", help="实验ID")
-    p.add_argument("--manifest", type=str, default="data_manifest.json")
+    p.add_argument("--manifest", type=str,
+                   default=str(_project_root() / "data_manifest.json"),
+                   help="data_manifest.json 路径")
     p.add_argument("--output_dir", type=str, default="checkpoints_ablation")
     p.add_argument("--model_name", type=str, default="google-t5/t5-small")
     p.add_argument("--max_train_samples", type=int, default=2000)
@@ -440,7 +457,7 @@ def main() -> None:
         pad_to_multiple_of=8 if torch.cuda.is_available() else None,
     )
 
-    out_dir = args.output_dir if os.path.isabs(args.output_dir) else _abs_here("..", args.output_dir)
+    out_dir = args.output_dir if os.path.isabs(args.output_dir) else str(_project_root() / args.output_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     loss_history = run_s2s_training(

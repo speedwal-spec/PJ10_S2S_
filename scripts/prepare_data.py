@@ -11,8 +11,12 @@
 import argparse
 import json
 import os
+from pathlib import Path
 
 from datasets import load_dataset
+
+# 项目根目录（scripts/ 的父目录）
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # 可选：国内镜像，便于在部分网络环境下加速访问 Hugging Face
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
@@ -48,16 +52,21 @@ def main():
     )
     args = parser.parse_args()
 
-    os.makedirs(args.cache_dir, exist_ok=True)
     name = args.dataset.strip()
 
-    print(f"正在下载数据集: {name} -> {args.cache_dir}")
+    # 缓存目录：支持相对路径（相对于项目根目录）和绝对路径
+    cache_dir = args.cache_dir
+    if not os.path.isabs(cache_dir):
+        cache_dir = str(PROJECT_ROOT / cache_dir)
+    os.makedirs(cache_dir, exist_ok=True)
+
+    print(f"正在下载数据集: {name} -> {cache_dir}")
 
     if name.lower() == "xsum":
-        ds = load_dataset("xsum", cache_dir=args.cache_dir)
+        ds = load_dataset("xsum", cache_dir=cache_dir)
         cfg_used = None
     else:
-        ds = load_dataset(name, args.dataset_config, cache_dir=args.cache_dir)
+        ds = load_dataset(name, args.dataset_config, cache_dir=cache_dir)
         cfg_used = args.dataset_config
 
     text_col, summary_col = get_text_summary_columns(name)
@@ -69,7 +78,7 @@ def main():
     manifest = {
         "dataset_name": name,
         "dataset_config": cfg_used,
-        "cache_dir": os.path.abspath(args.cache_dir),
+        "cache_dir": "data_cache",  # 使用相对路径，项目根目录下
         "text_column": text_col,
         "summary_column": summary_col,
         "splits": {
@@ -80,12 +89,11 @@ def main():
         "note": "cnn_dailymail 的 highlights 列为多句摘要/要点，可作标题生成监督；T5 常用输入前缀 summarize: ",
     }
 
-    out_json = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_manifest.json")
-    base_dir = os.path.dirname(out_json)
-
-    # 20 条测试样例（英文正文+参考摘要，便于人工试 predict，无需自撰长文）
+    # 写入项目根目录：data_manifest.json
+    out_json = PROJECT_ROOT / "data_manifest.json"
+    # 20 条测试样例，写入项目根目录
     sample_name = "sample_articles_20.json"
-    sample_path = os.path.join(base_dir, sample_name)
+    sample_path = PROJECT_ROOT / sample_name
     test_split = ds["test"]
     n_take = min(20, len(test_split))
     test_shuf = test_split.shuffle(seed=42).select(range(n_take))

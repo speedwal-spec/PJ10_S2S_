@@ -12,6 +12,7 @@ import os
 import sys
 import json
 import argparse
+from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
@@ -25,17 +26,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.core.report_generator import generate_all_reports
 
 
-def _here() -> str:
-    return os.path.dirname(os.path.abspath(__file__))
+def _project_root() -> Path:
+    """返回项目根目录（scripts/ 的父目录）"""
+    return Path(__file__).resolve().parents[1]
 
 
 def _abs(p: str) -> str:
     """将相对路径解析为基于项目根目录的绝对路径"""
     if os.path.isabs(p):
         return p
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    return os.path.join(project_root, p)
+    return str(_project_root() / p)
 
 
 def load_manifest(path: str) -> Dict[str, Any]:
@@ -51,7 +51,14 @@ def _load_raw_dataset(manifest: Dict[str, Any]):
     """从本地缓存加载数据集"""
     name = (manifest.get("dataset_name") or "cnn_dailymail").strip()
     cache_dir = manifest.get("cache_dir")
-    if not cache_dir or not os.path.isdir(cache_dir):
+    if not cache_dir:
+        raise FileNotFoundError(
+            f"manifest 中 cache_dir 为空，请重新执行 prepare_data.py"
+        )
+    # 若 cache_dir 是相对路径，解析为项目根目录下的路径
+    if not os.path.isabs(cache_dir):
+        cache_dir = str(_project_root() / cache_dir)
+    if not os.path.isdir(cache_dir):
         raise FileNotFoundError(
             f"manifest 中 cache_dir 无效: {cache_dir!r}"
         )
@@ -102,13 +109,14 @@ def compute_rouge(preds: List[str], refs: List[str]) -> Dict[str, float]:
 def main() -> None:
     """主函数：执行 ROUGE 评测"""
     # ✅ 确定项目根目录（不改变工作目录）
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
+    project_root = str(_project_root())
     
     parser = argparse.ArgumentParser(description="评测模型：ROUGE-1/2/L")
     parser.add_argument("--ckpt", type=str, default="checkpoints_ablation/baseline", 
                        help="checkpoint 目录")
-    parser.add_argument("--manifest", type=str, default="data_manifest.json")
+    parser.add_argument("--manifest", type=str,
+                       default=str(_project_root() / "data_manifest.json"),
+                       help="data_manifest.json 路径")
     parser.add_argument("--split", type=str, default="validation",
                        choices=["validation", "test"])
     parser.add_argument("--max_samples", type=int, default=1000,
