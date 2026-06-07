@@ -2,16 +2,20 @@
 # T5 新闻摘要消融实验 - Python 依赖
 # 用法: pip install -r requirements.txt
 # 环境: Python 3.10+
+#
+# 如果安装后遇到版本冲突，可尝试:
+#   pip install -r requirements-lock.txt
 # ============================================
 
 # --- 数据与模型库 ---
 datasets>=3.1.0
-huggingface_hub>=0.26.0
-transformers>=4.46.0
+huggingface_hub==0.26.5       # 已验证兼容 transformers==4.46.0；>=0.26 需用完整命名空间
+# transformers==4.46.0 与 huggingface-hub==0.26.5 是已验证的兼容组合
+transformers==4.46.0
 tokenizers>=0.20.0
 
 # --- 深度学习框架 ---
-torch>=2.0.0
+torch>=2.0.0                  # 不锁死版本，兼容不同 CUDA 版本的机器
 accelerate>=1.0.0
 safetensors>=0.7.0
 
@@ -30,10 +34,14 @@ bert-score>=0.3.13         # BERTScore 语义相似度
 matplotlib>=3.7.0          # Loss 曲线、ROUGE 柱状图、性能雷达图
 tensorboard>=2.14.0        # 训练实时监控
 
+# --- API 服务（main.py --mode api）---
+fastapi>=0.100.0           # REST API 微服务
+uvicorn>=0.20.0            # ASGI 服务器
+
 # --- 工具库 ---
 PyYAML>=6.0               # YAML 配置加载
 requests>=2.28.0           # API 调用
 tqdm>=4.65.0               # 进度条
 
-# --- Web 演示（可选） ---
-gradio>=4.0.0              # A/B 对比竞技场（main.py）
+# --- Web 演示 ---
+gradio>=4.0.0              # A/B 对比竞技场（demo.py）
