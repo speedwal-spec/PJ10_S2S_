@@ -1,0 +1,10 @@
+# configs/ablation/lr_0_0001.yaml
+# 消融实验 - 低学习率（对应实验记录表 Exp-1a）
+extends: baseline.yaml
+
+experiment:
+  id: "lr_0.0001"
+  description: "学习率=0.0001（对比基准0.0003）"
+
+training:
+  lr: 0.0001

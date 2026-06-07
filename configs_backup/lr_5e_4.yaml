@@ -1,0 +1,10 @@
+# configs/ablation/lr_5e_4.yaml
+# 新实验 - 中间学习率（精确定位最优LR区间）
+extends: baseline.yaml
+
+experiment:
+  id: "lr_5e4"
+  description: "学习率=0.0005（介于基准0.0003与高LR 0.001之间）"
+
+training:
+  lr: 0.0005

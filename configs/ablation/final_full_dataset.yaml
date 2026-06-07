@@ -1,0 +1,21 @@
+# ==========================================
+# 终极基线模型：全量数据训练配置 (RTX 4090 16GB 满血版)
+# ==========================================
+experiment:
+  id: "final_full_dataset_4090"
+  description: "全量数据正式训练"
+
+paths:
+  ablation_base: "checkpoints_ablation"
+
+data:
+  max_train_samples: 0      # 设为 0：火力全开，加载全部 28.7 万条训练数据
+  max_val_samples: 1000     # 验证集只抽 1000 条
+  max_source_length: 512
+  max_target_length: 128
+
+training:
+  epochs: 3
+  batch_size: 8             # 4090 特权：大 Batch Size
+  grad_accum: 4             # 等效 Batch Size 32
+  lr: 0.0001

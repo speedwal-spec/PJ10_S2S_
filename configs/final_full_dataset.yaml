@@ -1,0 +1,18 @@
+# ==========================================
+# 终极基线模型：全量数据训练配置 (Final Baseline)
+# ==========================================
+exp_id: "final_full_dataset"
+output_dir: "checkpoints_ablation"
+
+# 数据控制
+max_train_samples: 0      # 核心：0 代表自动加载全部 28.7 万条训练数据！
+max_val_samples: 1000     # 防卡死秘籍：验证集只抽 1000 条，否则 ROUGE 会算几个小时
+
+# 训练超参
+epochs: 3
+batch_size: 4             # 配合下方使用，防 8G/12G 显卡爆显存
+grad_accum: 4             # 梯度累积，等效 Batch Size = 16
+lr: 0.0001
+max_source_len: 512       # 新闻正文截断长度
+max_target_len: 128       # 摘要生成的最大长度
+seed: 42

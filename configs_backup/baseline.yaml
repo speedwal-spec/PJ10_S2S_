@@ -1,0 +1,12 @@
+# configs/ablation/baseline.yaml
+# 消融实验 - 基准配置
+# 只需写入与 default.yaml 不同的字段
+extends: ../default.yaml
+
+experiment:
+  id: "baseline"
+  description: "消融实验基准 - lr=0.0003, bs=4, ga=2"
+
+data:
+  max_train_samples: 80
+  max_val_samples: 20

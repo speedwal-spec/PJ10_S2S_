@@ -1,0 +1,10 @@
+# configs/ablation/no_accum.yaml
+# 消融实验 - 无梯度累积（对应实验记录表 Exp-4a）
+extends: baseline.yaml
+
+experiment:
+  id: "no_accum"
+  description: "无梯度累积 ga=1（对比基准 ga=2，保持 bs=4 不变）"
+
+training:
+  grad_accum: 1
