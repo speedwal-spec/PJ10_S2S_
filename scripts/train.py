@@ -198,26 +198,31 @@ def run_s2s_training(
         optimizer.zero_grad()
 
         train_iter = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs} [Train]", unit="batch")
+        cycle_actual_steps = args.grad_accum  # 初始化，第一个周期开始时会重新计算
         for step, batch in enumerate(train_iter):
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            is_last_batch = (step + 1) == steps_per_epoch
-            actual_accum_steps = args.grad_accum
-            if is_last_batch and steps_per_epoch % args.grad_accum != 0:
-                actual_accum_steps = steps_per_epoch % args.grad_accum
+            # ── 周期级统一除数：周期起始时预计算本周期实际累积步数 ──
+            # 关键原理：在 cycle 开头的第一个 micro-batch（即 optimizer.zero_grad 之后）
+            # 确定本周期内所有 batch 的「统一除数」，确保尾部各 batch 梯度权重完全相等。
+            # 若每个 step 独立计算，尾部周期各 batch 的除数会逐批递减（从 1/6 到 1/1），
+            # 导致越靠后的 batch 梯度越大——比原始统一缩到 75% 更糟糕。
+            if step % args.grad_accum == 0:
+                remaining_batches = steps_per_epoch - step
+                cycle_actual_steps = min(args.grad_accum, remaining_batches)
 
             if scaler is not None:
                 with torch.amp.autocast('cuda'):
                     outputs = model(**batch)
                     loss = outputs.loss
-                loss = loss / actual_accum_steps
+                loss = loss / cycle_actual_steps
                 scaler.scale(loss).backward()
             else:
                 outputs = model(**batch)
-                loss = outputs.loss / actual_accum_steps
+                loss = outputs.loss / cycle_actual_steps
                 loss.backward()
 
-            total_train_loss += loss.item() * actual_accum_steps
+            total_train_loss += outputs.loss.item()
 
             max_norm = float(getattr(args, "max_grad_norm", 1.0))
             if (step + 1) % args.grad_accum == 0 or (step + 1) == steps_per_epoch:
@@ -233,10 +238,10 @@ def run_s2s_training(
                 scheduler.step()       
                 optimizer.zero_grad()  
                 global_step += 1
-                tb_writer.add_scalar("Train/Loss", loss.item() * args.grad_accum, global_step)
+                tb_writer.add_scalar("Train/Loss", outputs.loss.item(), global_step)
                 tb_writer.add_scalar("Train/LearningRate", scheduler.get_last_lr()[0], global_step)
             
-            train_iter.set_postfix(loss=loss.item() * args.grad_accum)
+            train_iter.set_postfix(loss=outputs.loss.item())
 
         avg_train_loss = total_train_loss / steps_per_epoch
 
