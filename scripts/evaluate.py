@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-在验证集或测试集上，对 train.py 保存的 checkpoint 计算 ROUGE-1 / ROUGE-2 / ROUGE-L。
-
-依赖: pip install rouge-score
 用法:
     python scripts/evaluate.py --ckpt checkpoints_ablation/baseline
     python scripts/evaluate.py --ckpt checkpoints_ablation/baseline --split test --max_samples 0
@@ -19,8 +14,6 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-
-# 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.core.report_generator import generate_all_reports
@@ -108,7 +101,6 @@ def compute_rouge(preds: List[str], refs: List[str]) -> Dict[str, float]:
 
 def main() -> None:
     """主函数：执行 ROUGE 评测"""
-    # ✅ 确定项目根目录（不改变工作目录）
     project_root = str(_project_root())
     
     parser = argparse.ArgumentParser(description="评测模型：ROUGE-1/2/L")
@@ -189,7 +181,7 @@ def main() -> None:
         try:
             tokenizer = AutoTokenizer.from_pretrained(ck, use_fast=True)
         except Exception:
-            print("⚠️ 快速分词器加载失败，回退到慢速分词器", file=sys.stderr)
+            print("快速分词器加载失败，回退到慢速分词器", file=sys.stderr)
             tokenizer = AutoTokenizer.from_pretrained(ck, use_fast=False)
     model = AutoModelForSeq2SeqLM.from_pretrained(ck)
     model.to(device)
@@ -239,7 +231,7 @@ def main() -> None:
     rouge_scores = compute_rouge(preds, refs)
     
     print("\n" + "="*60)
-    print("📊 ROUGE 评测结果")
+    print("ROUGE 评测结果")
     print("="*60)
     print(f"  ROUGE-1: {rouge_scores['rouge1']:.4f}")
     print(f"  ROUGE-2: {rouge_scores['rouge2']:.4f}")
@@ -251,7 +243,7 @@ def main() -> None:
     extra_metrics = {}
     if args.with_bertscore or args.with_llm_judge:
         print("\n" + "="*60)
-        print("📊 额外指标评测")
+        print("额外指标评测")
         print("="*60)
         from src.core.metrics import compute_all_metrics
         extra_metrics = compute_all_metrics(
@@ -267,7 +259,7 @@ def main() -> None:
         print("="*60)
 
     # 输出示例
-    print("\n📝 生成样例（前3条）:")
+    print("\n生成样例（前3条）:")
     for k in range(min(3, len(preds))):
         print(f"\n[样例 {k+1}]")
         print(f"参考: {refs[k][:150]}...")
@@ -293,10 +285,10 @@ def main() -> None:
                     output_data[k] = v
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(output_data, f, ensure_ascii=False, indent=2)
-        print(f"\n✅ 结果已写入: {out_path}")
+        print(f"\n结果已写入: {out_path}")
     
-    # ✅ 自动生成完整报告（JSON + Markdown + 文本）
-    print("\n📝 正在生成评测报告...")
+    # 自动生成完整报告（JSON + Markdown + 文本）
+    print("\n正在生成评测报告...")
     exp_id = os.path.basename(args.ckpt)
     generated_files = generate_all_reports(
         rouge_scores=rouge_scores,
@@ -310,7 +302,7 @@ def main() -> None:
     )
     
     print("\n" + "="*60)
-    print("📄 生成的报告文件:")
+    print("生成的报告文件:")
     print("="*60)
     print(f"  JSON 结果:   {generated_files['json']}")
     print(f"  Markdown:    {generated_files['markdown']} (符合评测要求)")

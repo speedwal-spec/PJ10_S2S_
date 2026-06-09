@@ -1,6 +1,5 @@
 # configs/hardware.yaml
 # ─── 硬件配置 ───
-# 如果你的电脑没有GPU，所有设备相关配置会自动降级到CPU
 
 # ─── 设备选择 ───
 device:
@@ -13,7 +12,7 @@ device:
 
 # ─── 显存/内存优化 ───
 memory:
-  # AMP混合精度（有GPU时建议开启）
+  # AMP混合精度
   amp: true            # true / false
   
   # 梯度累积步数（显存不够就调大这个值）
@@ -28,11 +27,6 @@ memory:
   # 是否启用pin_memory（GPU时建议true，CPU时false）
   pin_memory: false
 
-# ─── 性能提示 ───
-# CPU训练建议：
-#   1. grad_accum 可以调大到 4 或 8
-#   2. batch_size 调小到 2
-#   3. epochs 调少到 3
 # GPU训练建议：
 #   1. batch_size 可调大到 8 或 16
 #   2. grad_accum 保持 1-2

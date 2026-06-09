@@ -1,5 +1,5 @@
 # configs/ablation/lr_5e_4.yaml
-# 新实验 - 中间学习率（精确定位最优LR区间）
+# 中间学习率
 extends: baseline.yaml
 
 experiment:

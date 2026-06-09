@@ -15,42 +15,30 @@ from src.configs.config_manager import ExperimentConfig
 class ModelManager:
     """
     双槽位模型管理器
-    
-    特性：
-    - 自动扫描硬盘上的模型资产
-    - 支持A/B双槽位独立加载
-    - 显存安全的热切换机制
-    - 防止双倍峰值OOM
     """
     
     def __init__(self, ablation_dir: Optional[str] = None, legacy_dir: Optional[str] = None,
                  config: Optional[ExperimentConfig] = None):
         """
-        初始化模型管理器
-        
         Args:
             ablation_dir: 消融实验模型目录（优先，默认读配置）
             legacy_dir: 传统模型目录（优先，默认读配置）
             config: 实验配置（可选），用于路径和推理默认值
         """
-        # ✅ 获取项目根目录
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(script_dir))
-        
-        # 从配置读取路径（命令行参数可覆盖）
+
         if config is not None:
             ablation_dir = ablation_dir or config.paths.ablation_base
             legacy_dir = legacy_dir or config.paths.output_dir
         else:
-            # ✅ 使用基于项目根目录的绝对路径
             ablation_dir = ablation_dir or os.path.join(project_root, "checkpoints_ablation")
             legacy_dir = legacy_dir or os.path.join(project_root, "t5-news-checkpoint")
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() 
             else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu")
         )
-        
-        # 从配置加载推理默认值
+
         if config is not None:
             self.max_source_length = config.data.max_source_length
             self.infer_num_beams = config.inference.num_beams
@@ -71,13 +59,12 @@ class ModelManager:
         
         # 扫描并注册硬盘上的可用模型资产
         self.registry = self._scan_assets(ablation_dir, legacy_dir)
-        print(f"📦 [Model Hub] 共扫描到 {len(self.registry)} 个可用模型资产。")
+        print(f"[Model Hub] 共扫描到 {len(self.registry)} 个可用模型资产。")
 
     def _scan_assets(self, ablation_dir: str, legacy_dir: str) -> Dict[str, dict]:
         """
         扫描目录中的模型资产
         统一以子目录方式扫描两个目录，支持任意数量的实验子目录
-        
         Args:
             ablation_dir: 消融实验目录
             legacy_dir: 传统模型目录
@@ -97,7 +84,6 @@ class ModelManager:
                     continue
                 if not os.path.exists(os.path.join(model_path, "config.json")):
                     continue
-                # 不覆盖已存在的同名实验（ablation_dir 优先）
                 if exp_id not in registry:
                     registry[exp_id] = self._build_model_profile(exp_id, model_path, scan_dir)
         
@@ -123,31 +109,26 @@ class ModelManager:
             模型档案字典
         """
         profile = {"path": model_path, "hparams": {}, "metrics": {}, "description": ""}
-        
-        # 1. 读取 train_hparams.json（新版本保存的完整字段，或老版本的部分字段）
+
         hparams_path = os.path.join(model_path, "train_hparams.json")
         saved_hparams = {}
         if os.path.exists(hparams_path):
             with open(hparams_path, "r", encoding="utf-8") as f:
                 saved_hparams = json.load(f)
         profile["hparams"] = dict(saved_hparams)
-        
-        # 2. 从目录名推断缺失的 hparams（兼容旧 checkpoint）
+
         inferred = self._infer_hparams_from_name(exp_id)
         for k, v in inferred.items():
             if k not in saved_hparams:
                 profile["hparams"][k] = v
-        
-        # 3. 仍缺失的字段用 default.yaml 兜底
+
         fallback = self._get_default_hparams()
         for k, v in fallback.items():
             if k not in profile["hparams"]:
                 profile["hparams"][k] = v
-        
-        # 4. 构建描述文案（优先从 ablation config，其次从推断）
+
         profile["description"] = self._build_description(exp_id, profile["hparams"])
-        
-        # 5. 读取评估指标（优先从扫描目录找 results_{exp_id}.json）
+
         metrics_name = f"results_{exp_id}.json"
         for candidate_dir in [scan_dir, "."]:
             if not candidate_dir:
@@ -166,15 +147,13 @@ class ModelManager:
     @staticmethod
     def _infer_hparams_from_name(exp_id: str) -> dict:
         """
-        从实验目录名推断超参（兼容旧版手动命名）
-        
+        从实验目录名推断超参
         支持的模式:
           lr_1e3, bs2_ga4, data_120, len_long, no_accum 等
         """
         inferred = {}
         name = exp_id.lower()
-        
-        # 学习率: lr_1e3 → 0.001, lr_1e4 → 0.0001
+
         m = re.search(r'lr[_-]?(\d+)e(\d+)', name)
         if m:
             base = float(m.group(1))
@@ -183,25 +162,21 @@ class ModelManager:
         m = re.search(r'lr[_-]?(\d+)_?(\d+)', name)  # lr_0_001
         if m and not any(k == 'lr' for k in inferred):
             inferred['lr'] = float(f"{m.group(1)}.{m.group(2)}")
-        
-        # 批大小: bs2 → 2, bs_8 → 8
+
         m = re.search(r'bs[_-]?(\d+)', name)
         if m:
             inferred['batch_size'] = int(m.group(1))
-        
-        # 梯度累积: ga4 → 4, ga_1 → 1
+
         m = re.search(r'ga[_-]?(\d+)', name)
         if m:
             inferred['grad_accum'] = int(m.group(1))
         if 'no_accum' in name:
             inferred['grad_accum'] = 1
-        
-        # 训练数据量: data_120 → 120, data_40 → 40
+
         m = re.search(r'data[_-]?(\d+)', name)
         if m:
             inferred['max_train_samples'] = int(m.group(1))
-        
-        # 生成长度: len_long → 80, len_short → 20
+
         if 'len_long' in name:
             inferred['max_target_len'] = 80
         elif 'len_short' in name:
@@ -212,7 +187,7 @@ class ModelManager:
     @staticmethod
     def _get_default_hparams() -> dict:
         """
-        从 configs/default.yaml 读取默认超参（作为兜底）
+        从 configs/default.yaml 读取默认超参
         """
         try:
             from src.configs.config_manager import load_full_config
@@ -226,7 +201,7 @@ class ModelManager:
                 'seed': _cfg.seed,
             }
         except Exception:
-            return {}  # 兜底失败时返回空，Gradio 端会显示 N/A
+            return {}
 
     @staticmethod
     def _build_description(exp_id: str, hparams: dict) -> str:
@@ -263,7 +238,7 @@ class ModelManager:
         
         if parts:
             return " | ".join(parts)
-        return exp_id  # 纯 fallback
+        return exp_id
 
     def load_model(self, exp_id: str, slot: str = "a") -> str:
         """
@@ -277,15 +252,15 @@ class ModelManager:
             状态消息
         """
         if exp_id not in self.registry: 
-            return f"❌ 未找到模型 {exp_id}"
+            return f"未找到模型 {exp_id}"
         
         curr_model_id = self.current_model_a if slot == "a" else self.current_model_b
         if exp_id == curr_model_id: 
-            return f"✅ 模型已在卡槽 {slot.upper()} 就绪"
+            return f"模型已在卡槽 {slot.upper()} 就绪"
 
-        print(f"🔄 正在为卡槽 {slot.upper()} 挂载: {exp_id}...")
+        print(f"正在为卡槽 {slot.upper()} 挂载: {exp_id}...")
         
-        # 1. 显式断开旧模型的引用并强制清空显存
+        # 显式断开旧模型的引用并强制清空显存
         if slot == "a":
             self.model_a, self.tokenizer_a = None, None
         else:
@@ -295,31 +270,27 @@ class ModelManager:
         if self.device.type == "cuda": 
             torch.cuda.empty_cache()
 
-        # 2. 安全加载新模型
         model_path = self.registry[exp_id]["path"]
         tok = AutoTokenizer.from_pretrained(model_path)
-        
-        # 关闭低内存模式，手动缝合权重，再安全推入显卡
+
         net = AutoModelForSeq2SeqLM.from_pretrained(
             model_path,
-            low_cpu_mem_usage=False  # 明确拒绝 accelerate 的虚拟张量加载
+            low_cpu_mem_usage=False
         )
         
         # 强行把 T5 分离的 encoder、decoder 和 lm_head 权重绑定到一起
         net.tie_weights() 
-        
-        # 缝合完毕后，作为一个完整的实体，推入显卡
+
         net = net.to(self.device)
         net.eval()
 
-        # 3. 绑定到指定卡槽
         if slot == "a":
             self.model_a, self.tokenizer_a, self.current_model_a = net, tok, exp_id
         else:
             self.model_b, self.tokenizer_b, self.current_model_b = net, tok, exp_id
             
-        print(f"✅ 卡槽 {slot.upper()} 挂载成功！")
-        return f"✅ 成功挂载至卡槽 {slot.upper()}"
+        print(f"卡槽 {slot.upper()} 挂载成功！")
+        return f"成功挂载至卡槽 {slot.upper()}"
 
     def generate_slot(self, article: str, max_length: int = 40, 
                      length_penalty: float = 0.85, slot: str = "a") -> str:
@@ -340,7 +311,7 @@ class ModelManager:
         curr_id = self.current_model_a if slot == "a" else self.current_model_b
         
         if not model: 
-            return f"⚠️ 卡槽 {slot.upper()} 尚未挂载模型！"
+            return f"卡槽 {slot.upper()} 尚未挂载模型！"
         if not article.strip(): 
             return ""
         

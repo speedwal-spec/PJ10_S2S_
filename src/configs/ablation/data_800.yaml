@@ -1,5 +1,5 @@
 # configs/ablation/samples_40.yaml
-# 消融实验 - 少量数据
+# 消融实验 - 大数据量
 extends: baseline.yaml
 
 experiment:

@@ -2,12 +2,7 @@
 统一评测指标模块
 ==========================
 提供 ROUGE / BERTScore / LLM-as-a-Judge 的统一接口，
-所有指标均以 Dict[str, float] 返回，可被 quick_eval.py 和 evaluate.py 无感调用。
-
-设计原则：
-- 每个指标函数独立、可组合
-- 依赖缺失时优雅降级（返回空 dict + stderr 提示）
-- LLM-as-a-Judge 默认关闭，需显式配置
+所有指标均以 Dict[str, float] 返回
 """
 import os
 import sys
@@ -17,10 +12,7 @@ import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-
-# ═══════════════════════════════════════════════════════════════
-# 1. ROUGE（基于 N-gram 的字面匹配）
-# ═══════════════════════════════════════════════════════════════
+# 1. ROUGE
 
 def compute_rouge(
     preds: List[str],
@@ -40,7 +32,7 @@ def compute_rouge(
     try:
         from rouge_score import rouge_scorer
     except ImportError:
-        print("⚠️ [Metrics] rouge-score 未安装，跳过 ROUGE。pip install rouge-score",
+        print("[Metrics] rouge-score 未安装，跳过 ROUGE。pip install rouge-score",
               file=sys.stderr)
         return {}
 
@@ -71,9 +63,7 @@ def compute_rouge(
     }
 
 
-# ═══════════════════════════════════════════════════════════════
 # 2. BERTScore（稠密向量语义相似度）
-# ═══════════════════════════════════════════════════════════════
 
 _BERTSCORE_DEFAULT_MODEL = "distilbert/distilbert-base-uncased"
 # 备选模型（按体积从小到大）
@@ -93,13 +83,6 @@ def compute_bertscore(
 ) -> Dict[str, float]:
     """
     计算 BERTScore（Precision / Recall / F1）
-
-    BERTScore 使用预训练语言模型计算两段文本之间的语义相似度，
-    比 ROUGE 更能捕捉「表述不同但语义相同」的情况。
-
-    网络提示：国内用户可设置环境变量 HF_ENDPOINT=https://hf-mirror.com 加速模型下载。
-    项目 configs/paths.yaml 中的 hf_endpoint 配置也会被自动读取。
-
     Args:
         preds: 生成文本列表
         refs: 参考文本列表
@@ -116,14 +99,13 @@ def compute_bertscore(
     try:
         from bert_score import score as bertscore_score
     except ImportError:
-        print("⚠️ [Metrics] bert-score 未安装，跳过 BERTScore。pip install bert-score",
+        print("[Metrics] bert-score 未安装，跳过 BERTScore。pip install bert-score",
               file=sys.stderr)
         return {}
 
     if device is None:
         device = "cuda:0" if _has_cuda() else "cpu"
 
-    # 自动配置 HuggingFace 镜像（国内用户无需手动设环境变量）
     if not os.environ.get("HF_ENDPOINT"):
         try:
             import yaml
@@ -138,7 +120,7 @@ def compute_bertscore(
                 hf_endpoint = env_cfg.get("hf_endpoint", "")
                 if hf_endpoint:
                     os.environ["HF_ENDPOINT"] = hf_endpoint
-                    os.environ["HUGGINGFACE_HUB_ENDPOINT"] = hf_endpoint  # huggingface_hub v0.21+ 也读这个环境变量
+                    os.environ["HUGGINGFACE_HUB_ENDPOINT"] = hf_endpoint
                     print(f"  [Metrics] 自动设置 HF_ENDPOINT={hf_endpoint}（来自 paths.yaml）")
         except Exception:
             pass  # 静默失败，不影响后续
@@ -170,7 +152,6 @@ def compute_bertscore(
             print(f"  [Metrics] BERTScore ({model}) 加载失败: {e}", file=sys.stderr)
             continue
 
-    # 所有模型都失败了，给用户可操作的提示
     print("=" * 60, file=sys.stderr)
     print("[Metrics] BERTScore 所有备选模型均加载失败。", file=sys.stderr)
     print("  可能的原因和解决方案:", file=sys.stderr)
@@ -187,9 +168,7 @@ def compute_bertscore(
     return {}
 
 
-# ═══════════════════════════════════════════════════════════════
 # 3. LLM-as-a-Judge（大模型评分）
-# ═══════════════════════════════════════════════════════════════
 
 _LLM_JUDGE_SYSTEM_PROMPT = """你是一个专业的新闻标题质量评估助手。请对以下模型生成的标题进行评分。
 
@@ -271,7 +250,6 @@ def _parse_llm_score(llm_response: str) -> Optional[Dict[str, float]]:
     if json_match:
         try:
             scores = json.loads(json_match.group())
-            # 确保所有维度都存在
             dims = ["factual_consistency", "conciseness", "semantic_alignment", "attractiveness"]
             result = {}
             for d in dims:
@@ -279,7 +257,6 @@ def _parse_llm_score(llm_response: str) -> Optional[Dict[str, float]]:
                 if v is not None:
                     result[f"llm_{d}"] = float(v)
             if result:
-                # 计算平均分
                 result["llm_avg"] = float(np.mean(list(result.values())))
                 return result
         except (json.JSONDecodeError, ValueError):
@@ -306,7 +283,6 @@ def compute_llm_judge(
     - 需要 OpenAI 兼容的 API（可通过环境变量 LLM_API_KEY / LLM_API_BASE 配置）
     - 默认只评测前 20 条（避免 API 费用过高）
     - 缺失依赖时返回空 dict
-
     Args:
         preds: 生成文本列表
         refs: 参考文本列表
@@ -370,9 +346,7 @@ def compute_llm_judge(
     return aggregated
 
 
-# ═══════════════════════════════════════════════════════════════
 # 4. 统一入口
-# ═══════════════════════════════════════════════════════════════
 
 def compute_all_metrics(
     preds: List[str],
@@ -384,11 +358,6 @@ def compute_all_metrics(
     llm_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    统一评测入口：按需启用多种指标
-
-    返回结果包含所有启用的指标分数。各指标模块独立运行，
-    一个失败不影响其他指标。
-
     Args:
         preds: 生成文本列表
         refs: 参考文本列表

@@ -1,5 +1,5 @@
 # configs/ablation/data_120.yaml
-# 消融实验 - 中等数据量（对应实验记录表 Exp-5c）
+# 消融实验 - 少量数据
 extends: baseline.yaml
 
 experiment:

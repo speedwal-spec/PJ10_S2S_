@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 评测报告生成模块
 职责：将 ROUGE 评测结果保存为 JSON、Markdown 和文本报告
@@ -49,7 +47,7 @@ def save_rouge_json(
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     
-    print(f"✅ 评测结果已写入: {output_path}")
+    print(f"评测结果已写入: {output_path}")
 
 
 def save_examples_markdown(
@@ -62,8 +60,6 @@ def save_examples_markdown(
     extra_metrics: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
-    保存生成样例为 Markdown 格式（符合评测要求）
-
     Args:
         preds: 预测列表
         refs: 参考列表
@@ -76,7 +72,6 @@ def save_examples_markdown(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     with open(output_path, "w", encoding="utf-8") as f:
-        # 标题
         f.write(f"# 模型评测样例 - {exp_id}\n\n")
 
         # 评测信息
@@ -86,7 +81,6 @@ def save_examples_markdown(
         f.write(f"**ROUGE-L**: {rouge_scores.get('rougeL', 0.0):.4f}  \n")
         f.write(f"**评测样本数**: {rouge_scores.get('n', 0)}\n\n")
 
-        # 额外指标（如 BERTScore / LLM Judge）
         if extra_metrics:
             f.write("### 额外指标\n\n")
             for k, v in extra_metrics.items():
@@ -98,7 +92,6 @@ def save_examples_markdown(
 
         f.write("---\n\n")
 
-        # 样例详情
         n_show = min(max_examples, len(preds))
         f.write(f"## 生成样例（前 {n_show} 条）\n\n")
 
@@ -139,12 +132,10 @@ def save_full_report(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     with open(output_path, "w", encoding="utf-8") as f:
-        # 报告头部
         f.write("=" * 70 + "\n")
         f.write(f"模型评测报告 - {exp_id}\n")
         f.write("=" * 70 + "\n\n")
-        
-        # 基本信息
+
         f.write(f"评测时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Checkpoint: {ckpt_path}\n")
         f.write(f"数据集划分: {split}\n")
@@ -157,8 +148,7 @@ def save_full_report(
         f.write(f"  ROUGE-1: {rouge_scores.get('rouge1', 0.0):.4f}\n")
         f.write(f"  ROUGE-2: {rouge_scores.get('rouge2', 0.0):.4f}\n")
         f.write(f"  ROUGE-L: {rouge_scores.get('rougeL', 0.0):.4f}\n\n")
-        
-        # 额外指标
+
         if extra_metrics:
             f.write("-" * 70 + "\n")
             f.write("额外指标（语义 / LLM 评分）\n")
@@ -169,8 +159,7 @@ def save_full_report(
                 else:
                     f.write(f"  {k}: {v}\n")
             f.write("\n")
-        
-        # 生成样例
+
         f.write("-" * 70 + "\n")
         f.write(f"生成样例（前 {min(max_examples, len(preds))} 条）\n")
         f.write("-" * 70 + "\n\n")
@@ -187,7 +176,7 @@ def save_full_report(
         f.write("报告结束\n")
         f.write("=" * 70 + "\n")
     
-    print(f"✅ 完整报告已写入: {output_path}")
+    print(f"完整报告已写入: {output_path}")
 
 
 def generate_all_reports(
@@ -216,7 +205,6 @@ def generate_all_reports(
     Returns:
         生成的文件路径字典
     """
-    # ✅ 使用模型名 + 样本数命名，避免覆盖
     n_samples = rouge_scores.get("n", 0)
     file_suffix = f"{exp_id}_n{n_samples}"
     

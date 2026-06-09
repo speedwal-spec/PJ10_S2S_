@@ -1,10 +1,10 @@
 # configs/ablation/full_data_2000.yaml
-# 新实验 - 全量训练数据（验证 Scaling Law 上限）
+# 新实验 - 更大训练数据
 extends: baseline.yaml
 
 experiment:
   id: "full_data_2000"
-  description: "2000条训练数据（default.yaml默认值，验证数据量上限）"
+  description: "2000条训练数据（default.yaml默认值）"
 
 data:
   max_train_samples: 2000

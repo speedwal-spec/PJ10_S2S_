@@ -1,7 +1,6 @@
 """
 核心模块：训练内联可视化工具
 职责：提供训练过程中的 Loss 曲线、ROUGE 柱状图、雷达图等快速渲染能力
-不负责离线消融实验全景分析（见 generate_comparison_plots.py）
 """
 import os
 import sys
@@ -15,11 +14,11 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-    print("⚠️ 警告: matplotlib 未安装，将跳过高清图表生成。安装命令: pip install matplotlib", file=sys.stderr)
+    print("注意: matplotlib 未安装，将跳过高清图表生成。", file=sys.stderr)
 
 
 def try_compute_rouge(preds: List[str], refs: List[str]) -> Optional[Dict[str, float]]:
-    """计算 ROUGE-1/2/L 均值（委托至 metrics 模块，保持向后兼容）"""
+    """计算 ROUGE-1/2/L 均值（委托至 metrics 模块）"""
     from src.core.metrics import compute_rouge
     result = compute_rouge(preds, refs)
     return result if result and "rouge1" in result else None

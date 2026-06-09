@@ -1,6 +1,6 @@
 """
 Gradio Web界面模块
-职责：构建A/B测试竞技场UI，提供交互式模型对比功能
+职责：构建A/B测试UI，提供交互式模型对比功能
 """
 import gradio as gr
 import os
@@ -9,19 +9,12 @@ from typing import Tuple
 from src.core.model_manager import ModelManager
 from src.configs.config_manager import load_full_config
 
-
-# ==========================================
-# 1. 初始化全局模型管理器（单例，由 launch() 延迟初始化）
-# ==========================================
 manager = None
 
-
-# ==========================================
-# 2. UI 前后端桥接函数 (Bridge Callbacks)
-# ==========================================
+# UI 前后端桥接函数
 
 def _fmt(val, fmt_float="{}", fmt_int="{}"):
-    """智能格式化：浮点数/整数/字符串统一处理，None 返回 N/A"""
+    """格式化：浮点数/整数/字符串统一处理，None 返回 N/A"""
     if val is None:
         return "N/A"
     if isinstance(val, float):
@@ -34,7 +27,6 @@ def _fmt(val, fmt_float="{}", fmt_int="{}"):
 def _generate_card_md(selected_exp_id: str) -> str:
     """
     生成模型属性卡片Markdown
-    
     Args:
         selected_exp_id: 选中的实验ID
         
@@ -51,14 +43,14 @@ def _generate_card_md(selected_exp_id: str) -> str:
     path = profile.get("path", "")
     
     # ── 摘要描述 ──
-    card_md = f"**📋 模型概要**\n"
+    card_md = f"**模型概要**\n"
     if desc:
         card_md += f"> {desc}\n\n"
     card_md += f"- 实验ID: `{selected_exp_id}`\n"
     card_md += f"- 模型路径: `{path}`\n\n"
     
     # ── 超参数 ──
-    card_md += "**🔬 训练超参**\n"
+    card_md += "**训练超参**\n"
     
     lr_val = hparams.get('lr')
     lr_str = _fmt(lr_val, fmt_float="{:g}")  # 科学计数法自动选择
@@ -77,16 +69,6 @@ def _generate_card_md(selected_exp_id: str) -> str:
     tgt_str = _fmt(hparams.get('max_target_len'))
     card_md += f"- 训练数据: `{data_str}` 条 | 验证数据: `{val_str}` 条\n"
     card_md += f"- 源文截断: `{src_str}` | 生成截断: `{tgt_str}`\n\n"
-    
-    # ── ROUGE 评测 ──
-    card_md += "**🏆 客观评测 (ROUGE)**\n"
-    if metrics:
-        r1 = metrics.get('rouge1', 0)
-        r2 = metrics.get('rouge2', 0)
-        rl = metrics.get('rougeL', 0)
-        card_md += f"- ROUGE-1: `{r1:.4f}` | ROUGE-2: `{r2:.4f}` | ROUGE-L: `{rl:.4f}`\n"
-    else:
-        card_md += "- *暂无离线评测数据（可运行 evaluate_rouge.py 补充）*\n"
     
     return card_md
 
@@ -141,16 +123,12 @@ def on_submit_dual(article: str, max_len: int, penalty: float) -> Tuple[str, str
     out_b = manager.generate_slot(article, max_len, penalty, slot="b")
     return out_a, out_b
 
-
-
-# ==========================================
-# 3. 渲染 (Theme) — 深紫蓝暗色主题
-# ==========================================
+# 渲染
 # 配色策略：
-#   body_background  = #1e1e3a  暗紫蓝背景（中深，给容器留变暗空间）
-#   block_background = #161630  容器比背景更深
-#   code background  = #2d2d52  代码块背景（CSS 注入）
-#   code text        = #f0d060  暖金色（深色底上最清晰）
+#   body_background  = #1e1e3a  暗紫蓝背景
+#   block_background = #161630
+#   code background  = #2d2d52
+#   code text        = #f0d060
 
 custom_css = """
 /* ── 修复 Markdown 行内代码（backtick `` 渲染的 <code>）── */
@@ -169,9 +147,6 @@ custom_css = """
     color: #e0e0e0 !important;
 }
 
-/* ── 修复快捷测试样例文字（深色底 + 黑字问题）──
-   覆盖 Gradio v3/v4/v5 不同版本的 class 命名差异
-   Gradio 4+ 每行是 <button> 而不是纯 <td> 文字 */
 .gr-sample-table td,
 .gr-sample-table td *,
 .gr-sample-table td span,
@@ -232,7 +207,7 @@ gemini_theme = gr.themes.Default(
     body_background_fill="#1e1e3a",
     body_text_color="#e8e8e8",
     
-    # ── 浮动层与下拉菜单底色（比背景更深）──
+    # ── 浮动层与下拉菜单底色 ──
     background_fill_primary="#161630",
     background_fill_secondary="#121228",
 
@@ -256,9 +231,7 @@ gemini_theme = gr.themes.Default(
 )
 
 
-# ==========================================
-# 4. 搭建响应式 Web 界面 (A/B Testing Arena)
-# ==========================================
+# 搭建响应式 Web 界面
 
 def create_demo(cfg) -> gr.Blocks:
     """
@@ -289,17 +262,17 @@ def create_demo(cfg) -> gr.Blocks:
             # --- 左侧：全局数据源与公共参数 ---
             with gr.Column(scale=1):
                 with gr.Group():
-                    gr.Markdown("### 📥 共享数据流入口")
+                    gr.Markdown("###    共享数据流入口")
                     input_text = gr.Textbox(
                         lines=10, 
                         label="原始正文 (Shared Raw Text Source)", 
                         placeholder="在此处粘贴冗长的英文新闻报道..."
                     )
                     with gr.Row():
-                        clear_btn = gr.Button("🗑️ 清空画布", variant="secondary")
-                        submit_btn = gr.Button("✨ 双模同步提炼标题", variant="primary")
+                        clear_btn = gr.Button("清空画布", variant="secondary")
+                        submit_btn = gr.Button("提炼标题", variant="primary")
                 
-                with gr.Accordion("⚙️ 全局推理引擎参数", open=True):
+                with gr.Accordion("⚙引擎参数", open=True):
                     max_len_slider = gr.Slider(minimum=10, maximum=100, value=cfg.inference.max_new_tokens, step=1, 
                                               label="生成截断长度 (Max Tokens)")
                     penalty_slider = gr.Slider(minimum=0.1, maximum=2.0, value=cfg.inference.length_penalty, step=0.05, 
@@ -307,12 +280,11 @@ def create_demo(cfg) -> gr.Blocks:
 
             # --- 右侧：消融模型 ---
             with gr.Column(scale=2):
-                gr.Markdown("### ⚔️ 消融实验 A/B 对比舱 (Evaluation Arena)")
+                gr.Markdown("### 消融实验 A/B 对比")
                 
                 with gr.Row():
-                    # 🔴  A：对照组
                     with gr.Column(scale=1, variant="panel"):
-                        gr.Markdown("#### 🔴 模型 A")
+                        gr.Markdown("#### 模型 A")
                         model_a_dropdown = gr.Dropdown(choices=model_choices, value=default_model, 
                                                       label="选择挂载的模型 A")
                         status_a = gr.Textbox(label="引擎 A 状态", value="等待挂载...", 
@@ -320,13 +292,12 @@ def create_demo(cfg) -> gr.Blocks:
                         model_card_a = gr.Markdown("*(加载后显示属性)*")
                         output_text_a = gr.Textbox(
                             lines=6, 
-                            label="📡 模型 A 提炼产出",
+                            label="模型 A 产出",
                             placeholder="模型 A 的生成标题将显示在这里..."
                         )
 
-                    # 🔵  B：实验组
                     with gr.Column(scale=1, variant="panel"):
-                        gr.Markdown("#### 🔵 模型 B")
+                        gr.Markdown("####模型 B")
                         model_b_dropdown = gr.Dropdown(choices=model_choices, value=default_b, 
                                                       label="选择挂载的模型 B")
                         status_b = gr.Textbox(label="引擎 B 状态", value="等待挂载...", 
@@ -334,7 +305,7 @@ def create_demo(cfg) -> gr.Blocks:
                         model_card_b = gr.Markdown("*(加载后显示属性)*")
                         output_text_b = gr.Textbox(
                             lines=6, 
-                            label="📡 模型 B 提炼产出",
+                            label="模型 B 产出",
                             placeholder="模型 B 的生成标题将显示在这里..."
                         )
 
@@ -358,12 +329,10 @@ def create_demo(cfg) -> gr.Blocks:
         gr.Examples(
             examples=example_list,
             inputs=input_text,
-            label="⚡ 快捷测试数据 (动态抓取自 Test 集抽样)",
+            label="快捷测试数据 (动态抓取自 Test 集抽样)",
         )
 
-        # ==========================================
-        # 6. 事件绑定与回调监听
-        # ==========================================
+        # 事件绑定与回调监听
         model_a_dropdown.change(fn=on_model_change_a, inputs=[model_a_dropdown], 
                                outputs=[status_a, model_card_a])
         model_b_dropdown.change(fn=on_model_change_b, inputs=[model_b_dropdown], 
@@ -392,9 +361,8 @@ def create_demo(cfg) -> gr.Blocks:
     return demo
 
 
-# ==========================================
-# 7. 启动入口
-# ==========================================
+# 启动入口
+
 def launch(server_name: str = "127.0.0.1", server_port: int = 7860, 
            share: bool = False):
     """
@@ -406,7 +374,7 @@ def launch(server_name: str = "127.0.0.1", server_port: int = 7860,
         share: 是否创建公开分享链接
     """
     global manager
-    print("🚀 MLOps Web Gateway 启动中...")
+    print("MLOps Web Gateway 启动中...")
     cfg = load_full_config()
     manager = ModelManager(
         ablation_dir=cfg.paths.ablation_base,

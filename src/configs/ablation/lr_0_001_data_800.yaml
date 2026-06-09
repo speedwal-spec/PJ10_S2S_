@@ -1,0 +1,14 @@
+# configs/ablation/optimal_combo.yaml
+# 最优组合（高学习率 × 更多数据，验证增益叠加）
+extends: baseline.yaml
+
+experiment:
+  id: "lr_0.001_data_800"
+  description: "组合优化 - lr=0.001 + 800条数据"
+
+training:
+  lr: 0.001
+
+data:
+  max_train_samples: 800
+  max_val_samples: 200

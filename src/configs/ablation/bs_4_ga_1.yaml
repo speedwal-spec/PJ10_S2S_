@@ -1,5 +1,5 @@
 # configs/ablation/no_accum.yaml
-# 消融实验 - 无梯度累积（对应实验记录表 Exp-4a）
+# 消融实验 - 无梯度累积
 extends: baseline.yaml
 
 experiment:

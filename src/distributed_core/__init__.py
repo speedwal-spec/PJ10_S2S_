@@ -1,6 +1,4 @@
-# -*- coding: utf-8 -*-
 """
-Distributed Core Module: Star-shaped Asynchronous Federated Dispatcher
 面向多云异构算力的星型异步联邦调度引擎核心模块
 """
 

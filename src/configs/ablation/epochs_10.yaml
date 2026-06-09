@@ -1,5 +1,5 @@
 # configs/ablation/epochs_10.yaml
-# 新实验 - 更多训练轮数（验证早停机制有效性）
+# 更多训练轮数（验证早停机制有效性）
 extends: baseline.yaml
 
 experiment:

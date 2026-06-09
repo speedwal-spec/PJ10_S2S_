@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 快速 ROUGE 评测模块
-职责：在训练结束后对验证集子集进行快速 ROUGE 评测，并生成可视化图表
+功能：在训练结束后对验证集子集进行快速 ROUGE 评测，并生成可视化图表
 """
 import os
 import sys
@@ -38,31 +36,28 @@ def quick_rouge_eval(
     """
     from src.core.metrics import compute_all_metrics
     
-    print("📥 正在重新加载表现最好的模型权重，以进行快速评测...", flush=True)
-    
-    # ✅ 计算项目根目录（从 src/core/ 往上两层）
-    script_dir = os.path.dirname(os.path.abspath(__file__))  # src/core/
-    src_dir = os.path.dirname(script_dir)                     # src/
-    project_root = os.path.dirname(src_dir)                   # 项目根目录
+    print("正在重新加载表现最好的模型权重，以进行快速评测...", flush=True)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    src_dir = os.path.dirname(script_dir)
+    project_root = os.path.dirname(src_dir)
     
     # 重新加载最佳模型
     output_dir = getattr(args, "output_dir", "checkpoints_ablation")
     exp_id = getattr(args, "exp_id", "baseline")
-    
-    # ✅ 如果 output_dir 是相对路径，基于项目根目录解析
+
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(project_root, output_dir)
     
     model_path = os.path.join(output_dir, exp_id)
-    
-    # ✅ 验证路径是否存在
+
     if not os.path.isdir(model_path):
         raise FileNotFoundError(
             f"模型路径不存在: {model_path}\n"
             f"请确认训练已完成，且模型已保存到该目录"
         )
     
-    print(f"📂 加载模型: {model_path}", flush=True)
+    print(f"加载模型: {model_path}", flush=True)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
     
     dev = torch.device(
@@ -108,13 +103,13 @@ def quick_rouge_eval(
         preds[:n_show], ref_texts[:n_show],
         enable_rouge=True,
         enable_bertscore=enable_bertscore,
-        enable_llm_judge=False,  # 训练快评不启用 LLM
+        enable_llm_judge=False,
     )
     
     if metrics:
         print("验证子集评测结果:", {k: round(v, 4) for k, v in metrics.items() if isinstance(v, float)}, flush=True)
     else:
-        print("未安装 rouge_score，跳过评测。可: pip install rouge-score", file=sys.stderr)
+        print("未安装 rouge_score，跳过评测。请进行: pip install rouge-score", file=sys.stderr)
     
     for k in range(min(2, n_show)):
         print(
@@ -132,7 +127,7 @@ def generate_report_visuals(
     final_out_dir: str,
 ) -> None:
     """
-    生成实验报告所需的图表（Loss曲线、ROUGE柱状图、雷达图等）
+    生成实验报告所需的图表
     
     Args:
         loss_history: 训练和验证 Loss 历史
@@ -151,7 +146,7 @@ def generate_report_visuals(
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
     viz_dir = os.path.join(final_out_dir, f"report_assets_{timestamp}")
     os.makedirs(viz_dir, exist_ok=True)
-    print(f"\n📊 正在为【实验报告】生成静态高清插图...", flush=True)
+    print(f"\n正在为【实验报告】生成静态高清插图...", flush=True)
 
     save_training_plot(
         loss_history['train_losses'],
@@ -185,4 +180,4 @@ def generate_report_visuals(
             os.path.join(viz_dir, "performance_radar.png")
         )
 
-    print(f"📸 实验报告专用插图已生成至: {os.path.abspath(viz_dir)}")
+    print(f"实验报告专用插图已生成至: {os.path.abspath(viz_dir)}")

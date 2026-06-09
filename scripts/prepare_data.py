@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 新闻摘要 / 标题生成任务 — 数据准备（独立脚本，不依赖项目其它源码）
 从 Hugging Face 下载 cnn_dailymail 或 xsum 到本地缓存，并生成：
@@ -15,10 +13,8 @@ from pathlib import Path
 
 from datasets import load_dataset
 
-# 项目根目录（scripts/ 的父目录）
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# 可选：国内镜像，便于在部分网络环境下加速访问 Hugging Face
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 
@@ -78,7 +74,7 @@ def main():
     manifest = {
         "dataset_name": name,
         "dataset_config": cfg_used,
-        "cache_dir": "data_cache",  # 使用相对路径，项目根目录下
+        "cache_dir": "data_cache",
         "text_column": text_col,
         "summary_column": summary_col,
         "splits": {
@@ -89,7 +85,6 @@ def main():
         "note": "cnn_dailymail 的 highlights 列为多句摘要/要点，可作标题生成监督；T5 常用输入前缀 summarize: ",
     }
 
-    # 写入项目根目录：data_manifest.json
     out_json = PROJECT_ROOT / "data_manifest.json"
     # 20 条测试样例，写入项目根目录
     sample_name = "sample_articles_20.json"

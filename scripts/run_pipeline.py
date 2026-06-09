@@ -1,21 +1,12 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 多种子消融实验流水线
 =====================
 对每个消融实验配置，使用多个随机种子（默认 5 个）分别执行 训练 → 评测，
 汇总均值 ± 标准差，生成具有统计意义的评测报告。
-
 用法：
     python run_pipeline.py                          # 运行所有消融实验
     python run_pipeline.py --seeds 5                 # 自定义种子数
     python run_pipeline.py --skip_trained            # 跳过已有训练的，只做评测
-
-设计要点：
-    - 广度优先遍历所有 YAML 配置
-    - 深度验证：每个配置跑 N 个种子，计算 Mean ± Std
-    - 若某个种子失败，不影响其他种子，最终结果基于成功数
-    - 最终生成统计报告，结论可被复现
 """
 import os
 import sys
@@ -28,28 +19,22 @@ from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 # 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PROJECT_ROOT)
 
 import numpy as np
 from src.configs.config_manager import load_config, load_full_config
 
-
-# ==========================================
-# 全局配置
-# ==========================================
-
 DEFAULT_SEEDS = [42, 123, 999, 2024, 7777]   # 固定种子列表，确保可复现
 # DEFAULT_SEEDS = [42]
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(message)s"
-TRAIN_SCRIPT = os.path.join("scripts", "train.py")
-EVAL_SCRIPT = os.path.join("scripts", "evaluate.py")
-ABLATION_DIR = "src/configs/ablation"
+TRAIN_SCRIPT = os.path.join(_PROJECT_ROOT, "scripts", "train.py")
+EVAL_SCRIPT = os.path.join(_PROJECT_ROOT, "scripts", "evaluate.py")
+ABLATION_DIR = os.path.join(_PROJECT_ROOT, "src", "configs", "ablation")
 
-# ==========================================
 # 日志
-# ==========================================
 
-log_file = f"pipeline_{time.strftime('%Y%m%d_%H%M')}.log"
+log_file = os.path.join(_PROJECT_ROOT, f"pipeline_{time.strftime('%Y%m%d_%H%M')}.log")
 logging.basicConfig(
     level=logging.INFO,
     format=LOG_FORMAT,
@@ -59,10 +44,7 @@ logging.basicConfig(
     ],
 )
 
-
-# ==========================================
 # 1. 加载消融实验矩阵
-# ==========================================
 
 def load_ablation_experiments(config_dir: str = ABLATION_DIR) -> List[dict]:
     """扫描 configs/ablation/ 目录，加载所有实验配置"""
@@ -74,7 +56,6 @@ def load_ablation_experiments(config_dir: str = ABLATION_DIR) -> List[dict]:
 
     experiments = []
     for yaml_path in yaml_files:
-        # 跳过 baseline.yaml（作为父类，不直接运行）
         if "baseline" in os.path.basename(yaml_path).lower():
             continue
 
@@ -91,17 +72,14 @@ def load_ablation_experiments(config_dir: str = ABLATION_DIR) -> List[dict]:
                 "skip_training": config.training.skip_training,
             }
             experiments.append(exp)
-            logging.info(f"📋 发现实验 [{exp['id']}] <- {exp['config_file']}")
+            logging.info(f"发现实验 [{exp['id']}] <- {exp['config_file']}")
         except Exception as e:
-            logging.error(f"❌ 加载 {yaml_path} 失败: {e}")
+            logging.error(f"加载 {yaml_path} 失败: {e}")
             continue
 
     return experiments
 
-
-# ==========================================
 # 2. 命令执行
-# ==========================================
 
 def run_command(cmd: str, desc: str, timeout: int = 7200) -> bool:
     """执行 shell 命令，返回是否成功"""
@@ -113,16 +91,13 @@ def run_command(cmd: str, desc: str, timeout: int = 7200) -> bool:
         subprocess.run(cmd, shell=True, check=True, timeout=timeout)
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"❌ {desc} 失败 (returncode={e.returncode})")
+        logging.error(f"{desc} 失败 (returncode={e.returncode})")
         return False
     except subprocess.TimeoutExpired:
-        logging.error(f"⏰ {desc} 超时 ({timeout}s)")
+        logging.error(f"{desc} 超时 ({timeout}s)")
         return False
 
-
-# ==========================================
 # 3. 对单个实验×单个种子 执行训练+评测
-# ==========================================
 
 def run_single_seed(
     exp_id: str,
@@ -133,7 +108,7 @@ def run_single_seed(
     eval_max_samples: int,
     skip_train: bool = False,
     with_bertscore: bool = False,
-    skip_training: bool = False,  # 来自配置，model-level 跳过训练
+    skip_training: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     对单个实验、单个种子运行 训练 → 评测
@@ -181,9 +156,9 @@ def run_single_seed(
             return None
     else:
         if os.path.isdir(ckpt_path) and os.path.isfile(os.path.join(ckpt_path, "config.json")):
-            logging.info(f"⏭️  跳过训练：{ckpt_path} 已存在")
+            logging.info(f"跳过训练：{ckpt_path} 已存在")
         else:
-            logging.warning(f"⚠️  跳过训练但 {ckpt_path} 不存在，仍尝试评测...")
+            logging.warning(f"跳过训练但 {ckpt_path} 不存在，仍尝试评测...")
 
     # ── 评测 ──
     seed_json = os.path.join(results_dir, f"seed{seed}.json")
@@ -205,19 +180,17 @@ def run_single_seed(
     try:
         with open(seed_json, "r", encoding="utf-8") as f:
             metrics = json.load(f)
-        logging.info(f"✅ [{exp_id}] seed={seed}: "
+        logging.info(f"[{exp_id}] seed={seed}: "
                       f"ROUGE-1={metrics.get('rouge1', 'N/A')}, "
                       f"ROUGE-2={metrics.get('rouge2', 'N/A')}, "
                       f"ROUGE-L={metrics.get('rougeL', 'N/A')}")
         return metrics
     except (json.JSONDecodeError, FileNotFoundError) as e:
-        logging.error(f"❌ 读取 {seed_json} 失败: {e}")
+        logging.error(f"读取 {seed_json} 失败: {e}")
         return None
 
 
-# ==========================================
 # 4. 统计聚合
-# ==========================================
 
 def aggregate_metrics(per_seed_metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -247,7 +220,7 @@ def aggregate_metrics(per_seed_metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
     for k, values in sorted(numeric_keys.items()):
         arr = np.array(values)
         result[f"{k}_mean"] = float(np.mean(arr))
-        result[f"{k}_std"] = float(np.std(arr, ddof=1))  # 样本标准差
+        result[f"{k}_std"] = float(np.std(arr, ddof=1))
         result[f"{k}_min"] = float(np.min(arr))
         result[f"{k}_max"] = float(np.max(arr))
     result["n_seeds"] = len(per_seed_metrics)
@@ -260,9 +233,7 @@ def format_metric_mean_std(mean: float, std: float, decimals: int = 4) -> str:
     return f"{mean:.{decimals}f} ± {std:.{decimals}f}"
 
 
-# ==========================================
 # 5. 生成统计报告
-# ==========================================
 
 def generate_ablation_report(
     all_experiments: List[Dict],
@@ -271,7 +242,7 @@ def generate_ablation_report(
     output_dir: str,
 ):
     """
-    生成多维度消融实验统计报告（Markdown 格式）
+    生成消融实验统计报告
 
     Args:
         all_experiments: 实验配置列表
@@ -303,7 +274,7 @@ def generate_ablation_report(
         f.write("\n---\n\n")
         f.write("## 核心指标对比（均值 ± 标准差）\n\n")
 
-        # 收集所有实验中出现的指标名称（ROUGE + 额外指标如 bertscore_f1）
+        # 收集所有实验中出现的指标名称
         all_metric_bases: List[str] = []
         for exp in all_experiments:
             agg = aggregated_results.get(exp["id"], {})
@@ -312,14 +283,13 @@ def generate_ablation_report(
                     base = k.rsplit("_", 1)[0]
                     if base not in all_metric_bases:
                         all_metric_bases.append(base)
-        # 按 ROUGE -> BERTScore -> 其他 排序
+
         metric_order = {
             "rouge1": 0, "rouge2": 1, "rougeL": 2,
             "bertscore_f1": 10, "bertscore_precision": 11, "bertscore_recall": 12,
         }
         all_metric_bases.sort(key=lambda x: metric_order.get(x, 99))
 
-        # 表头
         header = "| 实验 ID | 有效种子 |" + "".join(f" {m.upper()} |" for m in all_metric_bases)
         sep = "|---------|----------|" + "|".join("---------" for _ in all_metric_bases) + "|"
         f.write(header + "\n")
@@ -343,13 +313,11 @@ def generate_ablation_report(
             sort_key = agg.get(f"{all_metric_bases[0]}_mean", 0) if all_metric_bases else 0
             table_rows.append((sort_key, eid, n, cells))
 
-        # 按首个指标降序排列
         table_rows.sort(key=lambda x: x[0], reverse=True)
 
         for _, eid, n, cells in table_rows:
             f.write(f"| {eid} | {n} | " + " | ".join(cells) + " |\n")
 
-        # ── 详细结果（含额外指标） ──
         f.write("\n---\n\n")
         f.write("## 各实验详细结果\n\n")
 
@@ -358,7 +326,7 @@ def generate_ablation_report(
             agg = aggregated_results.get(eid, {})
             raw_list = per_seed_raw.get(eid, [])
             if not agg:
-                f.write(f"### {eid}\n> ⚠️ 无有效数据\n\n")
+                f.write(f"### {eid}\n> 无有效数据\n\n")
                 continue
 
             f.write(f"### {eid}\n\n")
@@ -372,7 +340,6 @@ def generate_ablation_report(
             for k in sorted(agg.keys()):
                 if k == "n_seeds":
                     continue
-                # 解析键名: rouge1_mean, rouge1_std, rouge1_min, rouge1_max
                 parts = k.rsplit("_", 1)
                 if len(parts) != 2:
                     continue
@@ -388,7 +355,6 @@ def generate_ablation_report(
                     f.write(f"| {base_name} | {format_metric_mean_std(mn, sd)} | "
                             f"{mi:.4f} | {mx:.4f} |\n")
 
-            # 每次种子的原始数据
             f.write("\n**各种子原始值**:\n\n")
             for r in raw_list:
                 seed_val = r.get("seed", "?")
@@ -408,7 +374,7 @@ def generate_ablation_report(
         f.write("- 若某实验标准差显著大于其他实验，说明该配置**不稳定**，结论需谨慎\n")
         f.write(f"- 所有结果均保存于: {output_dir}/\n")
 
-    logging.info(f"📄 统计报告已生成: {report_path}")
+    logging.info(f"统计报告已生成: {report_path}")
     return report_path
 
 
@@ -418,7 +384,7 @@ def generate_ablation_report(
 
 def main():
     """多种子消融实验流水线主函数"""
-    logging.info("🚀 T5-News 多种子消融实验流水线启动！")
+    logging.info("T5-News 多种子消融实验流水线启动！")
     logging.info("=" * 60)
     logging.info(f"设计：广度 × 深度遍历 | 每实验 {len(DEFAULT_SEEDS)} 种随机种子")
     logging.info("=" * 60)
@@ -426,28 +392,28 @@ def main():
 
     # ── 加载全局配置 ──
     cfg = load_full_config()
-    OUTPUT_BASE = cfg.paths.ablation_base     # checkpoint 输出根目录
+    OUTPUT_BASE = cfg.paths.ablation_base
     EVAL_MAX_SAMPLES = cfg.evaluation.max_samples
-    RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    RESULTS_DIR = os.path.join(_PROJECT_ROOT, "results")
     os.makedirs(OUTPUT_BASE, exist_ok=True)
 
-    logging.info(f"📂 Checkpoint 目录: {OUTPUT_BASE}")
-    logging.info(f"📂 评测结果目录: {RESULTS_DIR}")
-    logging.info(f"🔬 评测样本数: {EVAL_MAX_SAMPLES}")
-    logging.info(f"🎲 种子列表: {DEFAULT_SEEDS}")
+    logging.info(f"Checkpoint 目录: {OUTPUT_BASE}")
+    logging.info(f"评测结果目录: {RESULTS_DIR}")
+    logging.info(f"评测样本数: {EVAL_MAX_SAMPLES}")
+    logging.info(f"种子列表: {DEFAULT_SEEDS}")
 
     # ── 确保数据就绪 ──
     if not run_command("python scripts/prepare_data.py", "初始化数据管道"):
-        logging.error("❌ 数据准备失败，流水线中止")
+        logging.error("数据准备失败，流水线中止")
         return
 
     # ── 加载实验配置 ──
     experiments = load_ablation_experiments()
     if not experiments:
-        logging.error("❌ 未找到任何实验配置，流水线中止")
+        logging.error("未找到任何实验配置，流水线中止")
         return
 
-    logging.info(f"\n📊 共 {len(experiments)} 组实验 × {len(DEFAULT_SEEDS)} 种种子 = "
+    logging.info(f"\n共 {len(experiments)} 组实验 × {len(DEFAULT_SEEDS)} 种种子 = "
                   f"{len(experiments) * len(DEFAULT_SEEDS)} 次运行\n")
 
     # ── 逐实验遍历 ──
@@ -459,9 +425,9 @@ def main():
         exp_results_dir = os.path.join(RESULTS_DIR, eid)
         per_seed_raw[eid] = []
 
-        logging.info(f"\n{'⭐' * 40}")
+        logging.info(f"\n{'=' * 40}")
         logging.info(f"[{exp_idx}/{len(experiments)}] 实验: {eid} ({exp['config_file']})")
-        logging.info(f"{'⭐' * 40}")
+        logging.info(f"{'=' * 40}")
 
         for seed in DEFAULT_SEEDS:
             logging.info(f"  ── 种子 {seed} ──")
@@ -485,17 +451,17 @@ def main():
             aggregated_results[eid] = agg
             r1_mean = agg.get("rouge1_mean", 0)
             r1_std = agg.get("rouge1_std", 0)
-            logging.info(f"📊 [{eid}] 汇总 ({agg['n_seeds']} 种子): "
+            logging.info(f"[{eid}] 汇总 ({agg['n_seeds']} 种子): "
                           f"ROUGE-1 = {r1_mean:.4f} ± {r1_std:.4f}")
 
             # 保存聚合结果到 JSON
             agg_path = os.path.join(exp_results_dir, "aggregated.json")
             with open(agg_path, "w", encoding="utf-8") as f:
                 json.dump(agg, f, ensure_ascii=False, indent=2)
-            logging.info(f"   ✅ 聚合结果已写入: {agg_path}")
+            logging.info(f"   聚合结果已写入: {agg_path}")
         else:
             aggregated_results[eid] = {}
-            logging.warning(f"⚠️ [{eid}] 所有种子均失败，无聚合数据")
+            logging.warning(f"[{eid}] 所有种子均失败，无聚合数据")
 
     # ── 生成全量统计报告 ──
     report_path = generate_ablation_report(
@@ -508,7 +474,7 @@ def main():
     total_expected = len(experiments) * len(DEFAULT_SEEDS)
 
     logging.info(f"\n{'=' * 60}")
-    logging.info(f"🎉 多种子消融流水线执行完毕！")
+    logging.info(f"多种子消融流水线执行完毕！")
     logging.info(f"   总耗时: {total_time:.2f} 分钟")
     logging.info(f"   成功率: {total_success}/{total_expected}")
     logging.info(f"   统计报告: {report_path}")

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 API 模块: 面向生产环境的新闻摘要生成服务接口 (News Summarization Service API)
 设计目标: 将 T5 模型能力封装为标准的 RESTful API，支持高并发、流式输出与多版本模型管理。
@@ -94,8 +93,8 @@ class NewsSummarizerAPI:
 
     def start_server(self, host: str = "0.0.0.0", port: int = 8000):
         """启动 Web 服务"""
-        print(f"🚀 [API] 正在启动新闻摘要服务于 http://{host}:{port}")
-        print("⚠️ 当前处于 [演示模式 / Demo Mode]，仅展示接口定义。")
+        print(f"[API] 正在启动新闻摘要服务于 http://{host}:{port}")
+        print("当前处于 [演示模式 / Demo Mode]，仅展示接口定义。")
         pass
 
     def health_check(self) -> Dict:

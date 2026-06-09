@@ -1,5 +1,5 @@
 # configs/ablation/lr_0_0001.yaml
-# 消融实验 - 低学习率（对应实验记录表 Exp-1a）
+# 消融实验 - 低学习率
 extends: baseline.yaml
 
 experiment:

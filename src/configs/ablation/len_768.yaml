@@ -1,5 +1,5 @@
 # configs/ablation/len_768.yaml
-# 消融实验 - 长序列（对应实验记录表 Exp-3c）
+# 消融实验 - 长序列
 extends: baseline.yaml
 
 experiment:

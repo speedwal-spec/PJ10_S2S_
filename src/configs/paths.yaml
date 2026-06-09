@@ -1,9 +1,8 @@
 # configs/paths.yaml
 # ─── 路径与环境配置 ───
-# 不同电脑可能需要修改这里（模型期望路径、镜像等）
 
 paths:
-  # 训练输出路径（统一使用 checkpoints_ablation）
+  # 训练输出路径
   output_dir: "checkpoints_ablation"
   
   # 消融实验统一输出路径
@@ -12,7 +11,7 @@ paths:
   # 数据集缓存路径
   cache_dir: "data_cache"
   
-  # 测试样例文件（由 prepare_data.py 生成）
+  # 测试样例文件
   samples_file: "sample_articles_20.json"
   
   # 评测结果存放路径（空=当前目录）
@@ -25,13 +24,12 @@ paths:
   visualization_dir: "comparison_plots"
 
 # ─── 环境配置 ───
-# 这些配置与具体运行环境相关，不同电脑可能不同
 environment:
-  # HuggingFace 镜像源（国内网络可以用 hf-mirror.com）
+  # HuggingFace 镜像源
   hf_endpoint: "https://hf-mirror.com"
   
   # 设备选择：auto（自动检测）/ cuda / cpu / mps
   device: "auto"
   
   # AMP混合精度：auto 或 "fp16" 或 关闭
-  amp: "auto"  # auto=有cuda则开启，否则关闭
+  amp: "auto"

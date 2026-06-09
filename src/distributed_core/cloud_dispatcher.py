@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 核心模块: 面向多云异构算力的星型异步联邦调度引擎 (Star-shaped Asynchronous Federated Dispatcher)
 设计目标: 打破单节点算力瓶颈，通过 Token Pool 实现多平台 (Kaggle/HF/ModelScope) 资源的并联调度。
@@ -25,8 +24,8 @@ class TokenPoolManager:
         pass
 
     def get_available_token(self, platform: str) -> Optional[str]:
-        """获取健康的 Token，并在触发平台风控前自动轮换 (Rotation)"""
-        logger.info(f"🔄 [Token Pool] 正在为 {platform} 节点分配安全 Token...")
+        """获取Token，并在触发平台风控前自动轮换 (Rotation)"""
+        logger.info(f"[Token Pool] 正在为 {platform} 节点分配安全 Token...")
         pass
 
 class HeterogeneousCloudWorker:
@@ -43,7 +42,7 @@ class HeterogeneousCloudWorker:
 
     def async_execute_task(self, task: TaskPacket):
         """异步下发超参数配置，启动云端容器进行训练"""
-        logger.info(f"🚀 [Async Dispatch] 任务 {task.task_id} 下发至 {self.platform} 节点")
+        logger.info(f"Async Dispatch] 任务 {task.task_id} 下发至 {self.platform} 节点")
         # 预留 RPC 接口: 将任务压入 Message Queue，云端 worker 消费执行
         pass
 
@@ -67,12 +66,12 @@ class StarDispatcher:
             specs=specs
         )
         self.workers.append(worker)
-        logger.info(f"✅ [Registry] 新节点 {worker.worker_id} 已加入联邦网络")
+        logger.info(f"[Registry] 新节点 {worker.worker_id} 已加入联邦网络")
 
     def dispatch_ablation_matrix(self, param_matrix: List[Dict]):
         """分发海量消融实验矩阵，自动负载均衡"""
-        print("🌐 启动星型联邦调度引擎 (Star-Federated Engine)...")
-        print("⚠️ 检测到环境一致性校验要求，当前任务流降级为 [本地计算图单实例流水线 (Local Pipeline)] 执行。")
+        print("启动星型联邦调度引擎 (Star-Federated Engine)...")
+        print("检测到环境一致性校验要求，当前任务流降级为 [本地计算图单实例流水线 (Local Pipeline)] 执行。")
         
         # 框架逻辑演示：
         for params in param_matrix:
@@ -88,5 +87,5 @@ class StarDispatcher:
 
     def monitor_federation_status(self):
         """监控全局训练进度与各节点负载情况"""
-        print(f"📊 [Monitor] 当前队列积压任务: {self.task_queue.get_pending_count()} 个")
+        print(f"[Monitor] 当前队列积压任务: {self.task_queue.get_pending_count()} 个")
         pass

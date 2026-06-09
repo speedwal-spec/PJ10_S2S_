@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 T5 新闻标题 / 摘要生成微调脚本
 
@@ -35,9 +33,8 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
-    print("⚠️ 警告: matplotlib 未安装，将跳过高清图表生成", file=sys.stderr)
+    print("注意：matplotlib 未安装，将跳过高清图表生成", file=sys.stderr)
 
-# 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.configs.config_manager import load_config, load_full_config, merge_with_cli
@@ -80,7 +77,6 @@ def _load_raw_dataset(manifest: Dict[str, Any]):
         raise FileNotFoundError(
             f"manifest 中 cache_dir 为空，请重新执行 prepare_data.py"
         )
-    # 若 cache_dir 是相对路径，解析为项目根目录下的路径
     if not os.path.isabs(cache_dir):
         cache_dir = str(_project_root() / cache_dir)
     if not os.path.isdir(cache_dir):
@@ -103,11 +99,9 @@ def build_preprocess_fn(
 ):
     """构建预处理函数（S2S 输入/标签）"""
     def _map_fn(examples: Dict[str, List]) -> Dict[str, List]:
-        # 1. 给每条新闻正文拼接上 T5 专用的任务前缀 (Text-to-Text 范式)
         inputs = [prefix + str(text) for text in examples[text_col]]
         targets = [str(summary) for summary in examples[summary_col]]
 
-        # 2. 对输入端进行 Tokenize，此处不进行 Padding，留给 DataCollator 动态处理
         model_inputs = tokenizer(
             inputs, 
             max_length=max_source, 
@@ -115,7 +109,6 @@ def build_preprocess_fn(
             padding=False
         )
 
-        # 3. 使用规范的新版 text_target API 对目标端（标题）进行 Tokenize
         labels = tokenizer(
             text_target=targets, 
             max_length=max_target, 
@@ -123,7 +116,6 @@ def build_preprocess_fn(
             padding=False
         )
 
-        # 4. 组装成模型需要的标准输入格式
         model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 
@@ -141,15 +133,13 @@ def run_s2s_training(
     summary_col: str,
     args: argparse.Namespace,
 ) -> Dict[str, List[float]]:
-    """执行 S2S 训练循环"""
-    # 1. 自动检测并配置硬件设备
+
     device = torch.device(
         "cuda" if torch.cuda.is_available() 
         else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu")
     )
     model.to(device)
 
-    # 2. 构建 PyTorch DataLoader
     train_loader = DataLoader(
         train_tok, batch_size=args.batch_size, shuffle=True, collate_fn=data_collator
     )
@@ -157,10 +147,8 @@ def run_s2s_training(
         val_tok, batch_size=args.batch_size, shuffle=False, collate_fn=data_collator
     )
 
-    # 3. 初始化 AdamW 优化器
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=float(getattr(args, "weight_decay", 0.01)))
 
-    # 4. 计算总步数与学习率调度器
     steps_per_epoch = len(train_loader)
     num_update_steps_per_epoch = (steps_per_epoch + args.grad_accum - 1) // args.grad_accum
     total_train_steps = num_update_steps_per_epoch * args.epochs
@@ -170,7 +158,6 @@ def run_s2s_training(
         optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=total_train_steps
     )
 
-    # 5. 初始化 AMP 混合精度
     scaler = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
 
     print(f" [Prof 提示] 硬件设备: {device} | 显存优化 AMP: {'开启' if scaler else '关闭'}")
@@ -186,13 +173,11 @@ def run_s2s_training(
     best_val_loss = float("inf")
     patience_counter = 0
     patience_limit = getattr(args, "patience", 3) 
-    
-    # 动态获取模型固化路径
+
     final_out_dir = os.path.join(getattr(args, "output_dir", "checkpoints_ablation"), getattr(args, "exp_id", "default_run"))
     os.makedirs(final_out_dir, exist_ok=True)
 
     for epoch in range(args.epochs):
-        # --- 训练阶段 ---
         model.train()
         total_train_loss = 0
         optimizer.zero_grad()
@@ -202,11 +187,7 @@ def run_s2s_training(
         for step, batch in enumerate(train_iter):
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            # ── 周期级统一除数：周期起始时预计算本周期实际累积步数 ──
-            # 关键原理：在 cycle 开头的第一个 micro-batch（即 optimizer.zero_grad 之后）
-            # 确定本周期内所有 batch 的「统一除数」，确保尾部各 batch 梯度权重完全相等。
-            # 若每个 step 独立计算，尾部周期各 batch 的除数会逐批递减（从 1/6 到 1/1），
-            # 导致越靠后的 batch 梯度越大——比原始统一缩到 75% 更糟糕。
+
             if step % args.grad_accum == 0:
                 remaining_batches = steps_per_epoch - step
                 cycle_actual_steps = min(args.grad_accum, remaining_batches)
@@ -260,17 +241,17 @@ def run_s2s_training(
                 total_val_loss += outputs.loss.item()
         
         avg_val_loss = total_val_loss / len(val_loader)
-        print(f"\n✨ Epoch {epoch+1} 成果汇总 -> Avg Train Loss: {avg_train_loss:.4f} | Avg Val Loss: {avg_val_loss:.4f}")
+        print(f"\n Epoch {epoch+1} 成果汇总 -> Avg Train Loss: {avg_train_loss:.4f} | Avg Val Loss: {avg_val_loss:.4f}")
         tb_writer.add_scalar("Val/Loss", avg_val_loss, epoch + 1)
         train_losses_history.append(avg_train_loss)
         val_losses_history.append(avg_val_loss)
         
-        # Early Stopping 核心裁决逻辑
+        # Early Stopping
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             patience_counter = 0
-            print(f"📉 Val Loss 创新低 ({best_val_loss:.4f})，正在封存当前最优权重...")
-            # BART 需要 forced_bos_token_id=0，否则推理时解码退化
+            print(f" Val Loss 表现更佳 ({best_val_loss:.4f})，正在封存当前最优权重...")
+            # BART 需要 forced_bos_token_id=0
             if model.config.model_type == "bart" and model.config.forced_bos_token_id is None:
                 model.config.forced_bos_token_id = 0
                 model.generation_config.forced_bos_token_id = 0
@@ -278,9 +259,9 @@ def run_s2s_training(
             tokenizer.save_pretrained(final_out_dir)
         else:
             patience_counter += 1
-            print(f"⚠️ Val Loss 未降低 (已连续 {patience_counter}/{patience_limit} 次)")
+            print(f"Val Loss 未降低 (已连续 {patience_counter}/{patience_limit} 次)")
             if patience_counter >= patience_limit:
-                print(f"🛑 触发 Early Stopping！为防止模型过拟合，训练在 Epoch {epoch+1} 提前终止。\n")
+                print(f"触发 Early Stopping！为防止模型过拟合，训练在 Epoch {epoch+1} 提前终止。\n")
                 break
                 
     tb_writer.close()
@@ -317,7 +298,6 @@ def save_hparams_json(out_dir: str, exp_id: str, args: argparse.Namespace) -> No
 
 def main() -> None:
     """主函数：解析参数并启动训练"""
-    # ✅ 确定项目根目录（不改变工作目录）
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(script_dir)
 
@@ -358,14 +338,12 @@ def main() -> None:
     if args.config:
         config = load_config(args.config)
         config = merge_with_cli(config, args)
-        
-        # 设置 HuggingFace 镜像（从配置读取 paths.yaml 中的 hf_endpoint）
+
         hf_endpoint = config.environment.hf_endpoint
         if hf_endpoint and not os.environ.get("HF_ENDPOINT"):
             os.environ["HF_ENDPOINT"] = hf_endpoint
-            print(f"🌐 设置 HF_ENDPOINT={hf_endpoint}")
-        
-        # 将配置值同步回 args（仅当 CLI 未显式指定时覆盖）
+            print(f"设置 HF_ENDPOINT={hf_endpoint}")
+
         if '--exp-id' not in ' '.join(sys.argv) and '--exp_id' not in ' '.join(sys.argv):
             args.exp_id = config.id
         args.lr = config.training.lr
@@ -389,8 +367,8 @@ def main() -> None:
         args.tensorboard_dir = config.logging.tensorboard_dir
         if args.output_dir == "checkpoints_ablation":
             args.output_dir = config.paths.output_dir
-        print(f"📋 已加载配置: {args.config}")
-        print(f"📋 实验ID: {config.id} | 描述: {config.description}")
+        print(f"已加载配置: {args.config}")
+        print(f"实验ID: {config.id} | 描述: {config.description}")
 
     manifest = load_manifest(args.manifest)
     text_col = manifest["text_column"]
@@ -412,7 +390,7 @@ def main() -> None:
     print(f"子集: train={n_tr}, val={n_val}", flush=True)
 
     print("正在加载 T5 分词器与预训练权重…", flush=True)
-    # PEGASUS 使用 SentencePiece，fast tokenizer 转换在 transformers 当前版本有 bug
+
     if "pegasus" in args.model_name.lower():
         from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
         tokenizer = PegasusTokenizer.from_pretrained(args.model_name)
@@ -420,7 +398,7 @@ def main() -> None:
         try:
             tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
         except Exception:
-            print("⚠️ 快速分词器加载失败，回退到慢速分词器", file=sys.stderr)
+            print("快速分词器加载失败，回退到慢速分词器", file=sys.stderr)
             tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False)
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
     print("模型已就绪，开始 tokenize…", flush=True)
@@ -435,7 +413,7 @@ def main() -> None:
         model.save_pretrained(final_out_dir)
         tokenizer.save_pretrained(final_out_dir)
         save_hparams_json(final_out_dir, args.exp_id, args)
-        print(f"⏩ 跳过训练，预训练权重已保存至: {os.path.abspath(final_out_dir)}")
+        print(f"跳过训练，预训练权重已保存至: {os.path.abspath(final_out_dir)}")
         return
 
     preprocess = build_preprocess_fn(
@@ -490,7 +468,7 @@ def main() -> None:
     generate_report_visuals(loss_history, r, args, final_out_dir)
 
     print("="*60)
-    print(f"✅ 全链路运行结束，资产已封存: {os.path.abspath(final_out_dir)}")
+    print(f"全链路运行结束，资产已封存: {os.path.abspath(final_out_dir)}")
     print("="*60)
 
 

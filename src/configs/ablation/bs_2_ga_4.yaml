@@ -1,5 +1,5 @@
 # configs/ablation/bs_2_ga_4.yaml
-# 消融实验 - 小Batch Size（对应实验记录表 Exp-2a）
+# 消融实验 - 小Batch Size
 extends: baseline.yaml
 
 experiment:
