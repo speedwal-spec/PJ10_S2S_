@@ -1,26 +1,11 @@
-# T5 新闻摘要 - 多模型消融实验
+# PJ10: 新闻标题自动生成 —— 基于 Seq2Seq / T5 的文本摘要系统
 
-针对 CNN/DailyMail 新闻摘要任务，使用 T5-small、BART-large-cnn 两种模型进行控制变量消融实验，探究超参数对 ROUGE 指标的影响。
 
-## 项目概览
+针对 CNN/DailyMail 新闻摘要任务，使用 T5-small模型进行控制变量消融实验，探究超参数对 ROUGE 指标的影响。
 
-| 模型 | 参数量 | 训练方式 |
-|------|--------|----------|
-| google-t5/t5-small | 60M | 微调 |
-| facebook/bart-large-cnn | 406M | 零样本（skip_training） |
+
 
 **技术栈**: PyTorch + Transformers / datasets / PyYAML / ROUGE + BERTScore
-
----
-
-## 关键发现
-
-| 因素 | 变化 | ROUGE-L 变化 | 结论 |
-|------|------|-------------|------|
-| 数据量 40→120 | +200% | 0.1567 → 0.2571 (+64%) | 影响最大，优先扩充数据 |
-| 学习率 0.0003→0.001 | +233% | 0.2423 → 0.2655 (+9.6%) | 高学习率配合 early stopping 最佳 |
-| 序列长度 256→512 | +100% | 0.2241 → 0.2423 (+8.1%) | 512 性价比最高 |
-| bs=4→8 (ga=2→1) | +100% | 0.2423 → 0.2224 (-8.2%) | 梯度累积有益于稳定性 |
 
 ---
 
@@ -44,29 +29,9 @@ python scripts/evaluate.py --ckpt checkpoints_ablation/baseline --with_bertscore
 python scripts/demo.py
 ```
 
-> 国内用户：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
 > 设置 `HF_ENDPOINT=https://hf-mirror.com` 加速模型下载
 
 ---
-
-## 实验设计
-
-| 实验组 | 变量 | 取值 | 固定参数 |
-|--------|------|------|---------|
-
-
----
-
-## 结果
-
-| 实验 | ROUGE-1 | ROUGE-2 | ROUGE-L | Train Loss | Val Loss | 相对变化 |
-|------|---------|---------|---------|------------|----------|---------|
-| **Baseline** | 0.3053 | 0.1345 | **0.2423** | 1.8279 | 2.1721 | - |
-
-每个实验输出目录包含 4 张图表：training_curve / rouge_comparison / performance_radar / loss_rouge_evolution。
-
----
-
 ## 文件结构
 
 ```
@@ -110,4 +75,14 @@ PJ10_S2S_/
 default.yaml ← paths.yaml ← hardware.yaml ← baseline.yaml ← model_*.yaml
 ```
 
-`skip_training: true` 适用于已在 CNN/Dailymail 上微调过的模型（BART、PEGASUS），跳过训练直接评测。
+`skip_training: true` 适用于已在 CNN/Dailymail 上微调过的模型（BART），跳过训练直接评测。
+
+---
+## 结果产出
+
+每个实验输出目录包含 4 张图表：training_curve / rouge_comparison / performance_radar / loss_rouge_evolution
+
+运行评测后results目录下会有具体的评测信息文件，examples目录下会生成详细评测报告
+
+运行run_pipeline.py会自动生成所有实验结果，并生成最终报告，存放在results目录下
+---

@@ -25,8 +25,8 @@ sys.path.insert(0, _PROJECT_ROOT)
 import numpy as np
 from src.configs.config_manager import load_config, load_full_config
 
-DEFAULT_SEEDS = [42, 123, 999, 2024, 7777]   # 固定种子列表，确保可复现
-# DEFAULT_SEEDS = [42]
+# DEFAULT_SEEDS = [42, 123, 999, 2024, 7777]   # 固定种子列表，确保可复现
+DEFAULT_SEEDS = [42]
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(message)s"
 TRAIN_SCRIPT = os.path.join(_PROJECT_ROOT, "scripts", "train.py")
 EVAL_SCRIPT = os.path.join(_PROJECT_ROOT, "scripts", "evaluate.py")
@@ -51,7 +51,7 @@ def load_ablation_experiments(config_dir: str = ABLATION_DIR) -> List[dict]:
     yaml_files = sorted(glob.glob(os.path.join(config_dir, "*.yaml")))
 
     if not yaml_files:
-        logging.warning(f"⚠️ 未在 {config_dir}/ 找到任何 YAML 配置文件！")
+        logging.warning(f"未在 {config_dir}/ 找到任何 YAML 配置文件！")
         return []
 
     experiments = []
@@ -84,8 +84,8 @@ def load_ablation_experiments(config_dir: str = ABLATION_DIR) -> List[dict]:
 def run_command(cmd: str, desc: str, timeout: int = 7200) -> bool:
     """执行 shell 命令，返回是否成功"""
     logging.info(f"\n{'=' * 60}")
-    logging.info(f"⚙️  {desc}")
-    logging.info(f"💻 {cmd}")
+    logging.info(f"  {desc}")
+    logging.info(f" {cmd}")
     logging.info(f"{'=' * 60}\n")
     try:
         subprocess.run(cmd, shell=True, check=True, timeout=timeout)

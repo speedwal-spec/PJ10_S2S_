@@ -305,7 +305,7 @@ def main() -> None:
     print("生成的报告文件:")
     print("="*60)
     print(f"  JSON 结果:   {generated_files['json']}")
-    print(f"  Markdown:    {generated_files['markdown']} (符合评测要求)")
+    print(f"  Markdown:    {generated_files['markdown']} ")
     print(f"  文本报告:    {generated_files['text']}")
     print("="*60)
 
